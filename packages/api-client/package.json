@@ -1,0 +1,22 @@
+{
+  "name": "@sru/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Typed Axios client for the SRU Event Hub REST API (envelope unwrapping, CSRF, refresh-on-401).",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@sru/shared-types": "workspace:*",
+    "axios": "1.21.0"
+  },
+  "devDependencies": {
+    "@sru/shared-config": "workspace:*",
+    "typescript": "5.9.3"
+  }
+}

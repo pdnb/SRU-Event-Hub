@@ -1,0 +1,17 @@
+// SRU Event Hub – Prisma schema (multi-file). See docs/DATABASE.md.
+// Conventions:
+//   * UUID v7 primary keys (time-ordered → index friendly)
+//   * snake_case tables/columns via @@map/@map
+//   * timestamptz everywhere; money is Decimal(12,2)
+//   * constraints Prisma cannot express (partial unique, CHECK, exclusion,
+//     append-only triggers) live in migration SQL and are listed in DATABASE.md
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}

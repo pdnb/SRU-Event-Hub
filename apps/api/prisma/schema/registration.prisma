@@ -1,0 +1,141 @@
+// ───────────────────────── Registration ─────────────────────────
+
+enum RegistrationStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  WAITLISTED
+  CANCELLED
+  EXPIRED
+}
+
+enum RegistrationSource {
+  WEB
+  GROUP
+  WALK_IN
+  ADMIN
+}
+
+enum FieldType {
+  TEXT
+  TEXTAREA
+  NUMBER
+  EMAIL
+  PHONE
+  DATE
+  SELECT
+  MULTISELECT
+  RADIO
+  CHECKBOX
+}
+
+/// Organizer-defined extra registration questions (also used by group import templates).
+model RegistrationField {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  eventId    String    @map("event_id") @db.Uuid
+  key        String    @db.VarChar(50)
+  labelTh    String    @map("label_th") @db.VarChar(300)
+  fieldType  FieldType @map("field_type")
+  isRequired Boolean   @default(false) @map("is_required")
+  helpText   String?   @map("help_text") @db.VarChar(500)
+  maxLength  Int?      @map("max_length")
+  sortOrder  Int       @default(0) @map("sort_order")
+  isActive   Boolean   @default(true) @map("is_active")
+
+  event   Event                     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  options RegistrationFieldOption[]
+  answers RegistrationAnswer[]
+
+  @@unique([eventId, key])
+  @@map("registration_fields")
+}
+
+model RegistrationFieldOption {
+  id        String @id @default(uuid(7)) @db.Uuid
+  fieldId   String @map("field_id") @db.Uuid
+  value     String @db.VarChar(100)
+  labelTh   String @map("label_th") @db.VarChar(300)
+  sortOrder Int    @default(0) @map("sort_order")
+
+  field   RegistrationField    @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  answers RegistrationAnswer[]
+
+  @@unique([fieldId, value])
+  @@map("registration_field_options")
+}
+
+model Registration {
+  id                 String             @id @default(uuid(7)) @db.Uuid
+  eventId            String             @map("event_id") @db.Uuid
+  referenceNo        String             @unique @map("reference_no") @db.VarChar(30) // REG-2570-000001
+  userId             String?            @map("user_id") @db.Uuid
+  participantTypeId  String             @map("participant_type_id") @db.Uuid
+  status             RegistrationStatus
+  source             RegistrationSource @default(WEB)
+  prefix             String?            @db.VarChar(50)
+  firstName          String             @map("first_name") @db.VarChar(150)
+  lastName           String             @map("last_name") @db.VarChar(150)
+  email              String             @db.VarChar(254)
+  /// lower(trim(email)) – used by the partial unique index for duplicate prevention.
+  emailNormalized    String             @map("email_normalized") @db.VarChar(254)
+  phone              String?            @db.VarChar(20)
+  studentOrStaffCode String?            @map("student_or_staff_code") @db.VarChar(30)
+  affiliation        String?            @db.VarChar(300)
+  program            String?            @db.VarChar(300)
+  /// Seats this registration holds against events.seats_taken (1 for individuals).
+  seats              Int                @default(1)
+  consentAt          DateTime           @map("consent_at") @db.Timestamptz(6)
+  consentVersion     String             @map("consent_version") @db.VarChar(30)
+  confirmedAt        DateTime?          @map("confirmed_at") @db.Timestamptz(6)
+  paymentDueAt       DateTime?          @map("payment_due_at") @db.Timestamptz(6)
+  cancelledAt        DateTime?          @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason       String?            @map("cancel_reason") @db.VarChar(1000)
+  /// Secret used to look up status without login (stored hashed).
+  accessTokenHash    String?            @unique @map("access_token_hash") @db.Char(64)
+  version            Int                @default(1)
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById        String?            @map("created_by_id") @db.Uuid
+
+  event           Event                @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  user            User?                @relation("RegistrationUser", fields: [userId], references: [id], onDelete: SetNull)
+  participantType ParticipantType      @relation(fields: [participantTypeId], references: [id], onDelete: Restrict)
+  answers         RegistrationAnswer[]
+  waitingList     WaitingList?
+
+  @@index([eventId, status])
+  @@index([eventId, createdAt])
+  @@index([userId])
+  @@index([emailNormalized])
+  @@map("registrations")
+}
+
+model RegistrationAnswer {
+  id             String  @id @default(uuid(7)) @db.Uuid
+  registrationId String  @map("registration_id") @db.Uuid
+  fieldId        String  @map("field_id") @db.Uuid
+  optionId       String? @map("option_id") @db.Uuid
+  valueText      String? @map("value_text") @db.VarChar(5000)
+
+  registration Registration             @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  field        RegistrationField        @relation(fields: [fieldId], references: [id], onDelete: Restrict)
+  option       RegistrationFieldOption? @relation(fields: [optionId], references: [id], onDelete: Restrict)
+
+  @@index([registrationId])
+  @@index([fieldId, optionId])
+  @@map("registration_answers")
+}
+
+/// FIFO waitlist. Position is derived from created_at; promoted_at set when a seat is granted.
+model WaitingList {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  eventId        String    @map("event_id") @db.Uuid
+  registrationId String    @unique @map("registration_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  promotedAt     DateTime? @map("promoted_at") @db.Timestamptz(6)
+
+  event        Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  registration Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, promotedAt, createdAt])
+  @@map("waiting_lists")
+}

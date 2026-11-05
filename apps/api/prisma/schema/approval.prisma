@@ -1,0 +1,105 @@
+// ───────────────────────── Configurable approval workflow ─────────────────────────
+
+enum ApproverType {
+  ROLE // any user holding role (scoped to event org tree)
+  USER // a specific user
+  ORG_HEAD // head of the event's organization
+  PARENT_ORG_HEAD // head of the parent organization (chain of command)
+}
+
+enum ApprovalActionType {
+  SUBMIT
+  APPROVE
+  REJECT
+  RETURN
+  CANCEL
+}
+
+enum ApprovalTrigger {
+  INITIAL
+  FEE_CHANGE // fee edited after publish → must be re-approved (spec §4.4)
+  RESCHEDULE
+}
+
+model ApprovalWorkflow {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  code           String   @unique @db.VarChar(50)
+  nameTh         String   @map("name_th") @db.VarChar(200)
+  /// null = university-wide default
+  organizationId String?  @map("organization_id") @db.Uuid
+  /// Applies only to events with a registration fee.
+  forPaidEvents  Boolean  @default(false) @map("for_paid_events")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  organization Organization?     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  steps        ApprovalStep[]
+  requests     ApprovalRequest[]
+
+  @@index([organizationId])
+  @@map("approval_workflows")
+}
+
+model ApprovalStep {
+  id              String       @id @default(uuid(7)) @db.Uuid
+  workflowId      String       @map("workflow_id") @db.Uuid
+  stepOrder       Int          @map("step_order")
+  nameTh          String       @map("name_th") @db.VarChar(200)
+  approverType    ApproverType @map("approver_type")
+  approverRoleId  String?      @map("approver_role_id") @db.Uuid
+  approverUserId  String?      @map("approver_user_id") @db.Uuid
+  /// Finance review step (fee rates, receiving account, income code).
+  isFinanceReview Boolean      @default(false) @map("is_finance_review")
+  /// Skip this step for free events.
+  paidEventsOnly  Boolean      @default(false) @map("paid_events_only")
+
+  workflow     ApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  approverRole Role?            @relation(fields: [approverRoleId], references: [id], onDelete: Restrict)
+  approverUser User?            @relation(fields: [approverUserId], references: [id], onDelete: Restrict)
+  actions      ApprovalAction[]
+
+  @@unique([workflowId, stepOrder])
+  @@map("approval_steps")
+}
+
+model ApprovalRequest {
+  id               String          @id @default(uuid(7)) @db.Uuid
+  eventId          String          @map("event_id") @db.Uuid
+  workflowId       String          @map("workflow_id") @db.Uuid
+  round            Int             @default(1)
+  trigger          ApprovalTrigger @default(INITIAL)
+  status           ApprovalStatus  @default(PENDING)
+  currentStepOrder Int?            @map("current_step_order")
+  submittedById    String          @map("submitted_by_id") @db.Uuid
+  submittedAt      DateTime        @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  completedAt      DateTime?       @map("completed_at") @db.Timestamptz(6)
+
+  event       Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  workflow    ApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Restrict)
+  submittedBy User             @relation(fields: [submittedById], references: [id], onDelete: Restrict)
+  actions     ApprovalAction[]
+
+  @@unique([eventId, round])
+  @@index([status, currentStepOrder])
+  @@map("approval_requests")
+}
+
+/// Append-only (UPDATE/DELETE blocked by trigger).
+model ApprovalAction {
+  id        String             @id @default(uuid(7)) @db.Uuid
+  requestId String             @map("request_id") @db.Uuid
+  stepId    String?            @map("step_id") @db.Uuid
+  stepOrder Int?               @map("step_order")
+  action    ApprovalActionType
+  actorId   String             @map("actor_id") @db.Uuid
+  comment   String?            @db.VarChar(2000)
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  request ApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  step    ApprovalStep?   @relation(fields: [stepId], references: [id], onDelete: Restrict)
+  actor   User            @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([requestId, createdAt])
+  @@map("approval_actions")
+}

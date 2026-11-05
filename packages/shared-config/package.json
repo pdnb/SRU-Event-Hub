@@ -1,0 +1,10 @@
+{
+  "name": "@sru/shared-config",
+  "version": "0.1.0",
+  "private": true,
+  "files": ["tsconfig.base.json", "tsconfig.lib.json"],
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./tsconfig.lib.json": "./tsconfig.lib.json"
+  }
+}

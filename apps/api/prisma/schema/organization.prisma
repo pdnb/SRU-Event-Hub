@@ -1,0 +1,68 @@
+// ───────────────────────── University organization tree ─────────────────────────
+
+enum OrganizationType {
+  UNIVERSITY
+  FACULTY
+  OFFICE // สำนัก
+  INSTITUTE // สถาบัน
+  DIVISION // กอง
+  CENTER // ศูนย์
+  OTHER
+}
+
+enum OrgMemberRole {
+  HEAD
+  STAFF
+  PROPOSER // may propose events on behalf of the org
+  APPROVER
+  FINANCE_OFFICER
+}
+
+model Organization {
+  id                String           @id @default(uuid(7)) @db.Uuid
+  code              String           @unique @db.VarChar(30)
+  nameTh            String           @map("name_th") @db.VarChar(300)
+  nameEn            String?          @map("name_en") @db.VarChar(300)
+  shortName         String?          @map("short_name") @db.VarChar(50)
+  type              OrganizationType
+  parentId          String?          @map("parent_id") @db.Uuid
+  headUserId        String?          @map("head_user_id") @db.Uuid
+  /// True for กองคลัง — finance officers here act university-wide.
+  isFinanceDivision Boolean          @default(false) @map("is_finance_division")
+  isActive          Boolean          @default(true) @map("is_active")
+  sortOrder         Int              @default(0) @map("sort_order")
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById       String?          @map("created_by_id") @db.Uuid
+  updatedById       String?          @map("updated_by_id") @db.Uuid
+  deletedAt         DateTime?        @map("deleted_at") @db.Timestamptz(6)
+
+  parent    Organization?      @relation("OrgTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children  Organization[]     @relation("OrgTree")
+  head      User?              @relation("OrgHead", fields: [headUserId], references: [id], onDelete: SetNull)
+  members   UserOrganization[]
+  userRoles UserRole[]
+  events    Event[]
+  organizerOf EventOrganizer[]
+  workflows ApprovalWorkflow[]
+
+  @@index([parentId])
+  @@map("organizations")
+}
+
+model UserOrganization {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  userId         String        @map("user_id") @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  memberRole     OrgMemberRole @map("member_role")
+  position       String?       @db.VarChar(200)
+  isPrimary      Boolean       @default(false) @map("is_primary")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId, memberRole])
+  @@index([organizationId, memberRole])
+  @@map("user_organizations")
+}

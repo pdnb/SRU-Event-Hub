@@ -1,0 +1,28 @@
+{
+  "name": "sru-event-hub",
+  "private": true,
+  "description": "SRU Event Hub – ระบบบริหารจัดการกิจกรรม มหาวิทยาลัยราชภัฏสุราษฎร์ธานี",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "pnpm --filter @sru/api prisma:generate",
+    "db:migrate": "pnpm --filter @sru/api prisma:migrate",
+    "db:seed": "pnpm --filter @sru/api prisma:seed",
+    "infra:up": "docker compose up -d postgres redis storage storage-init",
+    "infra:down": "docker compose down"
+  },
+  "devDependencies": {
+    "prettier": "3.9.10",
+    "turbo": "2.11.10",
+    "typescript": "5.9.3"
+  }
+}

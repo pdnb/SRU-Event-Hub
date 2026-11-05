@@ -1,0 +1,258 @@
+// ───────────────────────── Events ─────────────────────────
+
+enum EventStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  PUBLISHED
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ApprovalStatus {
+  NOT_SUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
+  RETURNED
+}
+
+enum EventOrganizerRole {
+  OWNER
+  CO_ORGANIZER
+  STAFF
+}
+
+/// Configurable lookup – never hard-coded (spec §4.3).
+model EventType {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  code      String   @unique @db.VarChar(50)
+  nameTh    String   @map("name_th") @db.VarChar(200)
+  nameEn    String?  @map("name_en") @db.VarChar(200)
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  events Event[]
+
+  @@map("event_types")
+}
+
+model EventCategory {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  code      String   @unique @db.VarChar(50)
+  nameTh    String   @map("name_th") @db.VarChar(200)
+  nameEn    String?  @map("name_en") @db.VarChar(200)
+  color     String?  @db.VarChar(20)
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  events Event[]
+
+  @@map("event_categories")
+}
+
+model Tag {
+  id   String     @id @default(uuid(7)) @db.Uuid
+  name String     @unique @db.VarChar(100)
+
+  events EventTag[]
+
+  @@map("tags")
+}
+
+model EventTag {
+  eventId String @map("event_id") @db.Uuid
+  tagId   String @map("tag_id") @db.Uuid
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, tagId])
+  @@index([tagId])
+  @@map("event_tags")
+}
+
+/// นักศึกษา / บุคลากร / บุคคลภายนอก … (configurable)
+model ParticipantType {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  code      String   @unique @db.VarChar(50)
+  nameTh    String   @map("name_th") @db.VarChar(200)
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+
+  events        EventParticipantType[]
+  registrations Registration[]
+
+  @@map("participant_types")
+}
+
+model Event {
+  id                     String         @id @default(uuid(7)) @db.Uuid
+  code                   String         @unique @db.VarChar(30) // EVT-2570-000001
+  titleTh                String         @map("title_th") @db.VarChar(300)
+  titleEn                String?        @map("title_en") @db.VarChar(300)
+  eventTypeId            String?        @map("event_type_id") @db.Uuid
+  categoryId             String?        @map("category_id") @db.Uuid
+  organizationId         String         @map("organization_id") @db.Uuid
+  ownerUserId            String         @map("owner_user_id") @db.Uuid
+  description            String?
+  objectives             String?
+  targetAudience         String?        @map("target_audience")
+  conditions             String?
+  startAt                DateTime       @map("start_at") @db.Timestamptz(6)
+  endAt                  DateTime       @map("end_at") @db.Timestamptz(6)
+  registrationOpenAt     DateTime?      @map("registration_open_at") @db.Timestamptz(6)
+  registrationCloseAt    DateTime?      @map("registration_close_at") @db.Timestamptz(6)
+  venueId                String?        @map("venue_id") @db.Uuid
+  venueText              String?        @map("venue_text") @db.VarChar(500)
+  /// null = unlimited. CHECK seats_taken <= capacity enforced in SQL.
+  capacity               Int?
+  minParticipants        Int?           @map("min_participants")
+  /// Seats held by PENDING_PAYMENT + CONFIRMED registrations. Updated atomically.
+  seatsTaken             Int            @default(0) @map("seats_taken")
+  budget                 Decimal?       @db.Decimal(12, 2)
+  isPaid                 Boolean        @default(false) @map("is_paid")
+  allowGuestRegistration Boolean        @default(false) @map("allow_guest_registration")
+  allowWaitlist          Boolean        @default(true) @map("allow_waitlist")
+  allowSelfCancel        Boolean        @default(true) @map("allow_self_cancel")
+  isFeatured             Boolean        @default(false) @map("is_featured")
+  status                 EventStatus    @default(DRAFT)
+  approvalStatus         ApprovalStatus @default(NOT_SUBMITTED) @map("approval_status")
+  coverImageFileId       String?        @map("cover_image_file_id") @db.Uuid
+  publishedAt            DateTime?      @map("published_at") @db.Timestamptz(6)
+  cancelledAt            DateTime?      @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason           String?        @map("cancel_reason") @db.VarChar(1000)
+  /// Optimistic concurrency for edits.
+  version                Int            @default(1)
+  createdAt              DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById            String         @map("created_by_id") @db.Uuid
+  updatedById            String?        @map("updated_by_id") @db.Uuid
+  deletedAt              DateTime?      @map("deleted_at") @db.Timestamptz(6)
+
+  eventType        EventType?             @relation(fields: [eventTypeId], references: [id], onDelete: Restrict)
+  category         EventCategory?         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  owner            User                   @relation("EventOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  createdBy        User                   @relation("EventCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  venue            Venue?                 @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  coverImage       File?                  @relation("EventCover", fields: [coverImageFileId], references: [id], onDelete: SetNull)
+  tags             EventTag[]
+  images           EventImage[]
+  files            EventFile[]
+  schedules        EventSchedule[]
+  organizers       EventOrganizer[]
+  participantTypes EventParticipantType[]
+  statusHistory    EventStatusHistory[]
+  approvalRequests ApprovalRequest[]
+  registrationFields RegistrationField[]
+  registrations    Registration[]
+  waitingList      WaitingList[]
+  venueBookings    VenueBooking[]
+  resourceBookings ResourceBooking[]
+
+  @@index([organizationId, status])
+  @@index([status, startAt])
+  @@index([startAt])
+  @@index([categoryId])
+  @@index([eventTypeId])
+  @@map("events")
+}
+
+model EventParticipantType {
+  eventId           String @map("event_id") @db.Uuid
+  participantTypeId String @map("participant_type_id") @db.Uuid
+
+  event           Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  participantType ParticipantType @relation(fields: [participantTypeId], references: [id], onDelete: Restrict)
+
+  @@id([eventId, participantTypeId])
+  @@map("event_participant_types")
+}
+
+model EventImage {
+  id        String  @id @default(uuid(7)) @db.Uuid
+  eventId   String  @map("event_id") @db.Uuid
+  fileId    String  @map("file_id") @db.Uuid
+  caption   String? @db.VarChar(300)
+  sortOrder Int     @default(0) @map("sort_order")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  file  File  @relation("EventImageFile", fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@index([eventId])
+  @@map("event_images")
+}
+
+model EventFile {
+  id        String @id @default(uuid(7)) @db.Uuid
+  eventId   String @map("event_id") @db.Uuid
+  fileId    String @map("file_id") @db.Uuid
+  title     String @db.VarChar(300)
+  isPublic  Boolean @default(true) @map("is_public")
+  sortOrder Int    @default(0) @map("sort_order")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  file  File  @relation("EventAttachment", fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@index([eventId])
+  @@map("event_files")
+}
+
+/// Agenda / sessions within an event.
+model EventSchedule {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  eventId   String   @map("event_id") @db.Uuid
+  title     String   @db.VarChar(300)
+  startAt   DateTime @map("start_at") @db.Timestamptz(6)
+  endAt     DateTime @map("end_at") @db.Timestamptz(6)
+  venueText String?  @map("venue_text") @db.VarChar(300)
+  speaker   String?  @db.VarChar(300)
+  sortOrder Int      @default(0) @map("sort_order")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, startAt])
+  @@map("event_schedules")
+}
+
+model EventOrganizer {
+  id             String             @id @default(uuid(7)) @db.Uuid
+  eventId        String             @map("event_id") @db.Uuid
+  userId         String?            @map("user_id") @db.Uuid
+  organizationId String?            @map("organization_id") @db.Uuid
+  role           EventOrganizerRole
+
+  event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([userId])
+  @@map("event_organizers")
+}
+
+/// Every status transition (incl. reschedule / cancel) is recorded.
+model EventStatusHistory {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  eventId     String       @map("event_id") @db.Uuid
+  fromStatus  EventStatus? @map("from_status")
+  toStatus    EventStatus  @map("to_status")
+  reason      String?      @db.VarChar(1000)
+  changedById String?      @map("changed_by_id") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  event     Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  changedBy User? @relation(fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([eventId, createdAt])
+  @@map("event_status_history")
+}

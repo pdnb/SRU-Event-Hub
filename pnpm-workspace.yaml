@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+
+onlyBuiltDependencies:
+  - '@prisma/engines'
+  - prisma
+  - argon2
+  - '@nestjs/core'
+  - esbuild
+  - sharp
+  - msgpackr-extract

@@ -1,0 +1,152 @@
+// ───────────────────────── System: files, audit, settings, notifications ─────────────────────────
+
+enum NotificationChannel {
+  EMAIL
+  IN_APP
+  LINE
+}
+
+enum DeliveryStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+/// Object-storage metadata. Bytes live in S3/MinIO; private files are served via short-lived presigned URLs.
+model File {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  bucket       String    @db.VarChar(100)
+  objectKey    String    @map("object_key") @db.VarChar(500)
+  originalName String    @map("original_name") @db.VarChar(300)
+  mimeType     String    @map("mime_type") @db.VarChar(100)
+  sizeBytes    BigInt    @map("size_bytes")
+  sha256       String    @db.Char(64)
+  isPrivate    Boolean   @default(true) @map("is_private")
+  uploadedById String?   @map("uploaded_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  uploadedBy User?        @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  eventCovers Event[]     @relation("EventCover")
+  eventImages EventImage[] @relation("EventImageFile")
+  eventFiles  EventFile[]  @relation("EventAttachment")
+
+  @@unique([bucket, objectKey])
+  @@index([sha256])
+  @@map("files")
+}
+
+/// Security/business audit trail. Append-only (trigger blocks UPDATE/DELETE).
+model AuditLog {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorIp    String?  @map("actor_ip") @db.VarChar(64)
+  userAgent  String?  @map("user_agent") @db.VarChar(500)
+  action     String   @db.VarChar(100) // e.g. event.approve, payment.verify
+  entityType String   @map("entity_type") @db.VarChar(60)
+  entityId   String?  @map("entity_id") @db.VarChar(64)
+  before     Json?
+  after      Json?
+  reason     String?  @db.VarChar(2000)
+  requestId  String?  @map("request_id") @db.VarChar(64)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+/// Lightweight user-activity trail (page/feature usage), separate from audit.
+model ActivityLog {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  activity  String   @db.VarChar(100)
+  detail    String?  @db.VarChar(1000)
+  ip        String?  @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId, createdAt])
+  @@map("activity_logs")
+}
+
+model SystemSetting {
+  key         String   @id @db.VarChar(100)
+  value       Json
+  description String?  @db.VarChar(500)
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("system_settings")
+}
+
+/// Gap-free running numbers per prefix + fiscal year (PAY-2570-000123).
+/// Incremented with INSERT … ON CONFLICT DO UPDATE … RETURNING inside the business transaction.
+model DocumentSequence {
+  prefix     String @db.VarChar(10)
+  fiscalYear Int    @map("fiscal_year")
+  lastValue  Int    @default(0) @map("last_value")
+
+  @@id([prefix, fiscalYear])
+  @@map("document_sequences")
+}
+
+/// Stored responses for Idempotency-Key requests (spec §4.6, §8).
+model IdempotencyKey {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  scope          String   @db.VarChar(200) // METHOD path-template + actor
+  key            String   @db.VarChar(100)
+  requestHash    String   @map("request_hash") @db.Char(64)
+  responseStatus Int?     @map("response_status")
+  responseBody   Json?    @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+model Notification {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  type      String    @db.VarChar(80)
+  title     String    @db.VarChar(300)
+  body      String?   @db.VarChar(2000)
+  link      String?   @db.VarChar(500)
+  readAt    DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+model NotificationTemplate {
+  id        String              @id @default(uuid(7)) @db.Uuid
+  code      String              @db.VarChar(80)
+  channel   NotificationChannel
+  subject   String?             @db.VarChar(300)
+  body      String
+  isActive  Boolean             @default(true) @map("is_active")
+  updatedAt DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([code, channel])
+  @@map("notification_templates")
+}
+
+model NotificationLog {
+  id           String              @id @default(uuid(7)) @db.Uuid
+  channel      NotificationChannel
+  templateCode String              @map("template_code") @db.VarChar(80)
+  recipient    String              @db.VarChar(254)
+  status       DeliveryStatus      @default(QUEUED)
+  error        String?             @db.VarChar(2000)
+  attempts     Int                 @default(0)
+  sentAt       DateTime?           @map("sent_at") @db.Timestamptz(6)
+  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([status, createdAt])
+  @@map("notification_logs")
+}

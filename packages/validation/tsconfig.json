@@ -1,0 +1,5 @@
+{
+  "extends": "@sru/shared-config/tsconfig.lib.json",
+  "compilerOptions": { "types": [], "rootDir": "src", "outDir": "dist" },
+  "include": ["src"]
+}

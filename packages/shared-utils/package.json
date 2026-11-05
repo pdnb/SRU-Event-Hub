@@ -1,0 +1,22 @@
+{
+  "name": "@sru/shared-utils",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure, framework-free helpers shared by web and api: money, Thai baht text, PromptPay payload, fiscal year, Thai date formatting.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@sru/shared-config": "workspace:*",
+    "@types/jest": "30.0.0",
+    "jest": "30.5.2",
+    "ts-jest": "29.4.15",
+    "typescript": "5.9.3"
+  }
+}
