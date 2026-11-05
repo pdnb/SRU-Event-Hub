@@ -24,7 +24,7 @@ system: `files, audit_logs, activity_logs, system_settings, document_sequences, 
 | `registrations_email_normalized` | CHECK `email_normalized = lower(btrim(email))` |
 | `events_seats_within_capacity` | CHECK `seats_taken <= capacity` (ด่านที่สองกัน overbooking) |
 | `events_*` | CHECK เวลาเริ่ม<สิ้นสุด, ช่วงรับสมัคร, budget ≥ 0 |
-| `user_roles_user_role_org_key` | unique `NULLS NOT DISTINCT` |
+| `user_roles_user_role_org_key` | unique `NULLS NOT DISTINCT` — ประกาศ `@@unique(..., map:)` ชื่อเดียวกันใน schema ด้วย ไม่เช่นนั้น `prisma migrate dev` จะสร้าง migration ที่ DROP index นี้ (ห้าม commit migration แบบนั้น) |
 | `users_email_lower_key`, `users_username_lower_key` | unique แบบไม่สนตัวพิมพ์ |
 | `venue_bookings_no_overlap` | EXCLUDE USING gist — ห้องเดียวกันห้ามจองซ้อน (เฉพาะ APPROVED) |
 | `events_public_listing_idx` | partial index สำหรับหน้า portal |

@@ -208,6 +208,10 @@ model UserRole {
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   grantedBy    User?         @relation("RoleGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
 
+  /// One grant per (user, role, organization). The real index is created in the init migration
+  /// with NULLS NOT DISTINCT (so a NULL organization also counts as a value) – Prisma cannot
+  /// express that, but declaring it here keeps `prisma migrate dev` from generating a DROP INDEX.
+  @@unique([userId, roleId, organizationId], map: "user_roles_user_role_org_key")
   @@index([userId])
   @@index([organizationId])
   @@map("user_roles")
