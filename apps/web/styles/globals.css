@@ -8,8 +8,8 @@ html,
 body {
   margin: 0;
   padding: 0;
-  font-family: var(--font-sarabun), 'Sarabun', system-ui, sans-serif;
-  background: #f5f7fb;
+  font-family: var(--font-anuphan), 'Anuphan', system-ui, sans-serif;
+  background: #f8fafc;
   color: #1f2937;
   -webkit-font-smoothing: antialiased;
 }

@@ -20,7 +20,7 @@ export function EventCard({ event }: { event: EventSummaryDto }) {
           <div
             style={{
               height: 120,
-              background: `linear-gradient(135deg, ${brand.primary}, #3b5bcc)`,
+              background: `linear-gradient(135deg, ${brand.primary}, #38bdf8)`,
               color: '#fff',
               padding: 16,
               display: 'flex',

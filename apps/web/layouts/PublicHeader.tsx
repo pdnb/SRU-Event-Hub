@@ -1,7 +1,7 @@
 'use client';
 
 import { CalendarOutlined, LoginOutlined, MenuOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
-import { Button, Drawer, Flex, Grid, Menu } from 'antd';
+import { Button, ConfigProvider, Drawer, Flex, Grid, Menu } from 'antd';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
@@ -42,7 +42,8 @@ export function PublicHeader() {
 
   return (
     <header style={{ background: '#fff', borderBottom: `3px solid ${brand.accent}`, position: 'sticky', top: 0, zIndex: 100 }}>
-      <Flex className="page-container" align="center" justify="space-between" style={{ height: 68 }} gap={16}>
+      <div className="page-container">
+      <Flex align="center" justify="space-between" style={{ height: 68 }} gap={16}>
         <Link href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10 }}>
           <span
             aria-hidden
@@ -58,7 +59,9 @@ export function PublicHeader() {
         </Link>
         {screens.lg ? (
           <Flex align="center" gap={8} style={{ flex: 1, justifyContent: 'flex-end', minWidth: 0 }}>
-            <Menu mode="horizontal" selectedKeys={selected} items={items} style={{ borderBottom: 'none', flex: 1, justifyContent: 'flex-end', minWidth: 0 }} />
+            <ConfigProvider theme={{ components: { Menu: { itemPaddingInline: 12 } } }}>
+              <Menu mode="horizontal" selectedKeys={selected} items={items} style={{ borderBottom: 'none', flex: 1, justifyContent: 'flex-end', minWidth: 0 }} />
+            </ConfigProvider>
             {account}
           </Flex>
         ) : (
@@ -71,6 +74,7 @@ export function PublicHeader() {
           </>
         )}
       </Flex>
+      </div>
     </header>
   );
 }

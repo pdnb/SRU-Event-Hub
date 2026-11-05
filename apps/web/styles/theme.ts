@@ -1,37 +1,30 @@
 import type { ThemeConfig } from 'antd';
 
 /**
- * Design tokens. The brand colours below are PROVISIONAL until checked against
- * the university Brand Guideline (docs/OPEN_QUESTIONS.md §UI-1). Change them
- * here only — components read colours from the AntD token system.
+ * Brand palette: sky blue / slate grey / white.
+ * PROVISIONAL until checked against the university Brand Guideline
+ * (docs/OPEN_QUESTIONS.md §UI-1).
  */
 export const brand = {
-  primary: '#1f3a8a', // deep royal blue
-  accent: '#c9a227', // gold
-  sidebar: '#0f1f4d',
-  surface: '#f5f7fb',
+  primary: '#0466c8', // sky blue (sky-600: white text stays readable on it)
+  accent: '#e2e8f0', // light grey
+  sidebar: '#1e2b3d', // slate grey
+  surface: '#f8fafc', // near-white page background
 };
 
+/** AntD default theme + Anuphan font + brand colours. */
 export const theme: ThemeConfig = {
   cssVar: { prefix: 'sru' },
   token: {
     colorPrimary: brand.primary,
     colorInfo: brand.primary,
-    colorWarning: '#d97706',
     colorLink: brand.primary,
-    borderRadius: 8,
-    fontFamily: 'var(--font-sarabun), "Sarabun", system-ui, -apple-system, "Segoe UI", sans-serif',
-    fontSize: 15,
     colorBgLayout: brand.surface,
+    fontFamily: 'var(--font-anuphan), "Anuphan", system-ui, -apple-system, "Segoe UI", sans-serif',
   },
   components: {
-    Layout: { siderBg: brand.sidebar, headerBg: '#ffffff', headerPadding: '0 24px', headerHeight: 64 },
-    Menu: {
-      darkItemBg: brand.sidebar,
-      darkSubMenuItemBg: '#0b1840',
-      darkItemSelectedBg: brand.primary,
-    },
-    Table: { headerBg: '#eef2fb' },
-    Card: { headerFontSize: 16 },
+    // The admin header holds dark text/icons; AntD's default header is dark navy.
+    Layout: { headerBg: '#ffffff', headerPadding: '0 24px', siderBg: brand.sidebar },
+    Menu: { darkItemBg: brand.sidebar, darkSubMenuItemBg: '#1e293b', darkItemSelectedBg: brand.primary },
   },
 };
