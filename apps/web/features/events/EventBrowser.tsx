@@ -27,7 +27,10 @@ export function EventBrowser() {
   const set = useCallback(
     (patch: Record<string, string | undefined>) => {
       const next = new URLSearchParams(params.toString());
-      for (const [k, v] of Object.entries(patch)) (v ? next.set(k, v) : next.delete(k));
+      for (const [k, v] of Object.entries(patch)) {
+        if (v) next.set(k, v);
+        else next.delete(k);
+      }
       if (!('page' in patch)) next.delete('page');
       router.replace(`${pathname}?${next.toString()}`, { scroll: false });
     },

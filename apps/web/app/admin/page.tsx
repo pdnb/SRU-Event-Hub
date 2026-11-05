@@ -2,7 +2,8 @@
 
 import { CalendarOutlined, CheckSquareOutlined, ProjectOutlined, TeamOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Col, List, Row, Statistic, Typography } from 'antd';
+import { Card, Col, Row, Statistic, Typography } from 'antd';
+import { List } from '@/components/SimpleList';
 import Link from 'next/link';
 import type { EventSummaryDto } from '@sru/shared-types';
 import { ThaiDateRange } from '@/components/Format';

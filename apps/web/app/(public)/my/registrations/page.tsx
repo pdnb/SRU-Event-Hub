@@ -1,7 +1,8 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, Card, Empty, List, Modal, Popconfirm, Skeleton, Typography } from 'antd';
+import { Button, Card, Empty, Modal, Popconfirm, Skeleton, Typography } from 'antd';
+import { List } from '@/components/SimpleList';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';

@@ -1,8 +1,10 @@
 import { Tag } from 'antd';
-import { STATUS_META } from '@sru/shared-types';
+import { STATUS_META, STATUS_META_BY_KIND } from '@sru/shared-types';
 
-/** One status → one colour + Thai label everywhere (spec §7). */
-export function StatusTag({ status }: { status: string }) {
-  const meta = STATUS_META[status] ?? { label: status, color: 'default' };
+export type StatusKind = 'payment' | 'refund' | 'cashier' | 'batch';
+
+/** One status → one colour + Thai label everywhere (spec §7); `kind` disambiguates shared codes. */
+export function StatusTag({ status, kind }: { status: string; kind?: StatusKind }) {
+  const meta = (kind && STATUS_META_BY_KIND[kind]?.[status]) || STATUS_META[status] || { label: status, color: 'default' };
   return <Tag color={meta.color}>{meta.label}</Tag>;
 }

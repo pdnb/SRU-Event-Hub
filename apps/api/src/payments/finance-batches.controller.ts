@@ -10,6 +10,13 @@ import { BatchQueryDto, CreateBatchDto, EligibleQueryDto, RecordReceiptsDto, Rej
 export class FinanceBatchesController {
   constructor(private readonly batches: FinanceBatchesService) {}
 
+  @RequirePermissions('receipt:void')
+  @Post('receipts/:receiptId/void')
+  @HttpCode(200)
+  voidReceipt(@Param('receiptId', ParseUUIDPipe) receiptId: string, @Body() dto: RejectDto, @CurrentUser() u: AuthUser, @ReqMeta() m: RequestMeta) {
+    return this.batches.voidReceipt(receiptId, dto.reason, u, m);
+  }
+
   @RequirePermissions('finance_batch:view')
   @Get()
   list(@Query() q: BatchQueryDto, @CurrentUser() u: AuthUser) {

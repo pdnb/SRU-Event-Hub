@@ -5,7 +5,7 @@
 ## มาตรฐาน
 - Response สำเร็จ `{ "success": true, "data": …, "meta": { "page", "perPage", "total" } }`
 - Error `{ "success": false, "error": { "code", "message", "details?", "requestId" } }` — client ตัดสินใจจาก `code`
-- Status: 200/201, 400 (`IDEMPOTENCY_KEY_REQUIRED`), 401 (`UNAUTHORIZED`, `INVALID_CREDENTIALS`), 403 (`FORBIDDEN`, `CSRF_INVALID`), 404, 409 (`INVALID_STATE`, `VERSION_CONFLICT`, `DUPLICATE_REGISTRATION`, `EVENT_FULL`, `REGISTRATION_CLOSED`, `FEE_NOT_AVAILABLE`, `PAYMENT_EXPIRED`, `DUPLICATE_SLIP`, `PAYMENT_ALREADY_BATCHED`, `RECEIPT_EXISTS`, `RECEIPT_NO_TAKEN`), 413 (`FILE_TOO_LARGE`), 415 (`FILE_TYPE_NOT_ALLOWED`), 422 (`VALIDATION_ERROR` + details), 429
+- Status: 200/201, 400 (`IDEMPOTENCY_KEY_REQUIRED`), 401 (`UNAUTHORIZED`, `INVALID_CREDENTIALS`), 403 (`FORBIDDEN`, `CSRF_INVALID`), 404, 409 (`INVALID_STATE`, `VERSION_CONFLICT`, `DUPLICATE_REGISTRATION`, `EVENT_FULL`, `REGISTRATION_CLOSED`, `FEE_NOT_AVAILABLE`, `PAYMENT_EXPIRED`, `DUPLICATE_SLIP`, `PAYMENT_ALREADY_BATCHED`, `RECEIPT_EXISTS`, `RECEIPT_NO_TAKEN`, `SESSION_ALREADY_OPEN`), 413 (`FILE_TOO_LARGE`), 415 (`FILE_TYPE_NOT_ALLOWED`), 422 (`VALIDATION_ERROR` + details), 429
 - Pagination `?page=&perPage=` (สูงสุด 100), ค้นหา `?search=`, เรียง `?order=asc|desc`
 - เงินเป็น string ทศนิยม 2 ตำแหน่ง, วันที่ ISO-8601 UTC (ไม่บวก พ.ศ. ใน API)
 - `Idempotency-Key` (8–100 ตัว) — คำขอซ้ำได้ผลเดิมพร้อม header `Idempotent-Replayed: true`
@@ -42,4 +42,18 @@ POST /finance/payments/:id/verify · /finance/payments/:id/reject {reason}     P
 GET  /finance/batches · /finance/batches/eligible?eventId · /finance/batches/:id · /finance/batches/:id/export (xlsx)
 POST /finance/batches {eventId, paymentIds?, note?} · /:id/submit · /:id/receive · /:id/return {reason} · /:id/receipts {receipts[]}
 GET/POST/PATCH /finance/bank-accounts · /finance/income-codes
+```
+
+## Endpoints (P2b)
+```text
+GET  /finance/cashier-sessions?status&eventId      POST /finance/cashier-sessions {eventId, openingFloat?}
+GET  /finance/cashier-sessions/:id · /:id/payables?search
+POST /finance/cashier-sessions/:id/collect {orderId}   (Idempotency-Key บังคับ)
+POST /finance/cashier-sessions/:id/close {countedAmount, note?} · /:id/remit {remittanceNo} · /:id/confirm
+POST /finance/cashier-sessions/payments/:paymentId/void {reason}
+GET  /finance/refunds?status · /finance/refunds/refundable?eventId&search
+POST /finance/refunds {orderId, amount, reason, payeeName, bankName, accountNo} · /:id/approve · /:id/reject {reason} · /:id/pay {paidRef} · /:id/reveal-account
+POST /finance/batches/receipts/:receiptId/void {reason}
+GET  /audit-logs?action(prefix)&entityType&entityId&actorId&from&to&search · /audit-logs/actions
+GET  /settings          PATCH /settings/:key {value}  (ต้องคงชนิดข้อมูลเดิม)
 ```

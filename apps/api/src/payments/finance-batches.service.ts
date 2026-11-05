@@ -72,7 +72,13 @@ export class FinanceBatchesService {
 
   private eligibleWhere(db: Tx | PrismaService, eventId: string) {
     return db.payment.findMany({
-      where: { status: 'VERIFIED', order: { eventId }, batchItems: { none: { isActive: true } } },
+      where: {
+        status: 'VERIFIED',
+        order: { eventId },
+        batchItems: { none: { isActive: true } },
+        // Cash is batchable only after an officer has confirmed the remitted cashier session.
+        OR: [{ channel: 'TRANSFER' }, { cashierSession: { status: 'CONFIRMED' } }],
+      },
       include: { order: true },
       orderBy: { verifiedAt: 'asc' },
     });
@@ -156,8 +162,9 @@ export class FinanceBatchesService {
         verifiedAt: i.payment.verifiedAt?.toISOString() ?? null,
         verifiedByName: i.payment.verifiedBy?.displayName ?? null,
         receipt: i.payment.receipts[0]
-          ? { bookNo: i.payment.receipts[0].bookNo, receiptNo: i.payment.receipts[0].receiptNo, issuedAt: i.payment.receipts[0].issuedAt.toISOString().slice(0, 10) }
+          ? { id: i.payment.receipts[0].id, bookNo: i.payment.receipts[0].bookNo, receiptNo: i.payment.receipts[0].receiptNo, issuedAt: i.payment.receipts[0].issuedAt.toISOString().slice(0, 10) }
           : null,
+        channel: i.payment.channel,
       })),
     };
   }
@@ -297,6 +304,30 @@ export class FinanceBatchesService {
     return new StreamableFile(Buffer.from(await wb.xlsx.writeBuffer()), {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       disposition: `attachment; filename="${b.batchNo}.xlsx"`,
+    });
+  }
+
+  /**
+   * Voids a recorded receipt number (wrong number / cancelled receipt per กองคลัง rules, FIN-8).
+   * The batch drops back to RECEIVED so a replacement number can be recorded. The record stays
+   * (status VOIDED + reason) – receipt numbers are never deleted.
+   */
+  async voidReceipt(receiptId: string, reason: string, user: AuthUser, meta: RequestMeta) {
+    const r = await this.prisma.receiptRecord.findUnique({ where: { id: receiptId }, include: { batch: true, payment: { include: { order: { include: { event: true } } } } } });
+    if (!r) throw Errors.notFound('ใบเสร็จ');
+    await this.access.assertOrg(user, 'receipt:void', r.batch?.organizationId ?? r.payment.order.event.organizationId);
+    return this.prisma.$transaction(async (tx) => {
+      if (r.batchId) await tx.$queryRaw`SELECT id FROM finance_batches WHERE id = ${r.batchId}::uuid FOR UPDATE`;
+      const res = await tx.receiptRecord.updateMany({
+        where: { id: receiptId, status: { in: ['ISSUED', 'DELIVERED'] } },
+        data: { status: 'VOIDED', voidedAt: new Date(), voidReason: reason },
+      });
+      if (res.count !== 1) throw Errors.invalidState('ใบเสร็จนี้ถูกยกเลิกแล้ว');
+      if (r.batchId) {
+        await tx.financeBatch.updateMany({ where: { id: r.batchId, status: 'RECEIPTS_ISSUED' }, data: { status: 'RECEIVED', version: { increment: 1 } } });
+      }
+      await this.audit.log({ actorId: user.id, action: 'receipt.void', entityType: 'receipt', entityId: receiptId, before: { receipt: `${r.bookNo}/${r.receiptNo}` }, after: { status: 'VOIDED' }, reason, meta }, tx);
+      return { id: receiptId, status: 'VOIDED' };
     });
   }
 

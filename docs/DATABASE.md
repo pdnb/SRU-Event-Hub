@@ -48,7 +48,13 @@ Constraint/trigger เพิ่มเติม (เขียนเองใน m
 - `forbid_amount_change()`: ห้ามแก้ `amount` และห้ามลบแถวใน `payment_orders, payments, finance_batch_items, receipt_records`
 - `forbid_batch_total_change()`: ยอดรวม/จำนวนรายการของ `finance_batches` แก้ไม่ได้ และลบไม่ได้
 
-ลำดับการล็อกแถว (กัน deadlock): registration → event → payment_order → payment
+## Migration `cashier_refund` (P2b)
+ตาราง: `cashier_sessions` (+ `payments.cashier_session_id`), `refunds`
+- Partial unique: กะ OPEN ได้ 1 กะต่อผู้รับเงินต่อกิจกรรม
+- `forbid_cashier_total_change()`: ยอดที่ระบบ/ยอดนับได้ตอนปิดกะ และเงินทอนตั้งต้นแก้ไม่ได้, ลบกะไม่ได้
+- `refunds.amount` แก้ไม่ได้/ลบไม่ได้ (`forbid_amount_change()`), `account_no_enc` เก็บแบบ AES-256-GCM
+
+ลำดับการล็อกแถว (กัน deadlock): registration → event / cashier_session → payment_order → payment
 
 ## ตารางระยะถัดไป (ออกแบบตาม spec §6)
 - **P2b Payment & Finance (ส่วนที่เหลือ)**: `billing_infos, payment_order_lines (ใบแจ้งรวมของกลุ่ม P3: CHECK registration_id XOR group_id), cashier_sessions, cash_remittances, receipt_stocks, refunds (บัญชีเข้ารหัส AES-256-GCM), bank_statement_imports, bank_statement_lines`

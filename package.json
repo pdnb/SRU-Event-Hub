@@ -9,7 +9,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "lint": "turbo run lint",
+    "lint": "eslint .",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "format": "prettier --write .",
@@ -18,11 +18,18 @@
     "db:migrate": "pnpm --filter @sru/api prisma:migrate",
     "db:seed": "pnpm --filter @sru/api prisma:seed",
     "infra:up": "docker compose up -d postgres redis storage storage-init",
-    "infra:down": "docker compose down"
+    "infra:down": "docker compose down",
+    "lint:fix": "eslint . --fix"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@next/eslint-plugin-next": "16.4.2",
+    "eslint": "10.13.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
     "prettier": "3.9.10",
     "turbo": "2.11.10",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.0"
   }
 }

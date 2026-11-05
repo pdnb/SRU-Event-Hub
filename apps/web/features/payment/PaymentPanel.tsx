@@ -6,7 +6,8 @@ import type { PaymentOrderDto } from '@sru/shared-types';
 import { Alert, App, Button, Card, DatePicker, Descriptions, Flex, Space, Typography, Upload } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { QRCodeSVG } from 'qrcode.react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useNowMinute } from '@/hooks/useClientValue';
 import { Money, ThaiDate } from '@/components/Format';
 import { StatusTag } from '@/components/StatusTag';
 import { useApiMessage } from '@/hooks/useApiMessage';
@@ -16,13 +17,8 @@ const MAX_MB = 5;
 const ACCEPT = '.jpg,.jpeg,.png,.pdf';
 
 function useRemaining(dueAt: string) {
-  const [now, setNow] = useState<number | null>(null);
-  useEffect(() => {
-    setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(t);
-  }, []);
-  if (now === null) return null; // avoid SSR/client mismatch
+  const now = useNowMinute();
+  if (now === null) return null; // server render: no countdown (avoids hydration mismatch)
   const ms = new Date(dueAt).getTime() - now;
   if (ms <= 0) return 'เลยกำหนดแล้ว';
   const h = Math.floor(ms / 3_600_000);
@@ -143,7 +139,7 @@ export function PaymentPanel({
               แนบหลักฐานการโอนเงิน
             </Typography.Title>
             <Upload.Dragger
-              style={{ height: "auto", padding: "8px 0" }}
+              style={{ height: 'auto', padding: '8px 0' }}
               accept={ACCEPT}
               maxCount={1}
               fileList={file ? [{ uid: '1', name: file.name, status: 'done' }] : []}

@@ -31,6 +31,8 @@ export function RegistrationStatusLookup() {
     const token = h.get('token');
     if (referenceNo && token) {
       form.setFieldsValue({ referenceNo, token });
+      // The URL fragment exists only in the browser, so it can only be read after hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCreds({ referenceNo, token });
       lookup.mutate({ referenceNo, token });
     }

@@ -145,4 +145,14 @@ export const STATUS_META: Record<string, { label: string; color: string }> = {
   CLOSED: { label: 'ปิดแล้ว', color: 'default' },
   OPEN: { label: 'เปิดกะ', color: 'green' },
   REMITTED: { label: 'นำส่งแล้ว', color: 'blue' },
+  // refund
+  REQUESTED: { label: 'รอพิจารณา', color: 'gold' },
+};
+
+/** Context-specific labels where the same code means different things (e.g. SUBMITTED). */
+export const STATUS_META_BY_KIND: Record<string, Record<string, { label: string; color: string }>> = {
+  payment: { SUBMITTED: { label: 'รอตรวจสอบ', color: 'processing' } },
+  refund: { PAID: { label: 'คืนเงินแล้ว', color: 'green' }, APPROVED: { label: 'อนุมัติแล้ว รอจ่ายคืน', color: 'cyan' } },
+  cashier: { CLOSED: { label: 'ปิดกะแล้ว', color: 'orange' }, CONFIRMED: { label: 'ยืนยันยอดแล้ว', color: 'green' } },
+  batch: { SUBMITTED: { label: 'ส่งกองคลังแล้ว', color: 'blue' } },
 };

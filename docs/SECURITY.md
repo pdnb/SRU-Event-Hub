@@ -10,7 +10,7 @@
 | Input | `ValidationPipe` whitelist + forbidNonWhitelisted, Zod ฝั่ง web, ตรวจคำตอบฟอร์มแบบไดนามิกตามชนิดฟิลด์ฝั่ง server |
 | Injection | Prisma (parameterized) + `$queryRaw` แบบ tagged template เท่านั้น; Excel/CSV export ป้องกัน formula injection |
 | XSS / headers | React escape อัตโนมัติ, Helmet (CSP, HSTS…), Next security headers, ไม่ใช้ `dangerouslySetInnerHTML` |
-| Rate limiting | Global 300/นาที/IP, login 10/นาที, ลงทะเบียน 20/นาที, ตรวจสถานะ 10/นาที, ยกเลิกด้วย token 5/นาที + Nginx limit_req |
+| Rate limiting | Global 300/นาที/IP, login 10/นาที, ลงทะเบียน 20/นาที, ตรวจสถานะ 10/นาที, ยกเลิกด้วย token 5/นาที, แนบสลิป 10/นาที + Nginx limit_req — ตัวนับเก็บใน Redis (Lua atomic) ใช้ร่วมกันทุก replica; Redis ล่ม = fail-open (timeout 500ms) เหลือ Nginx เป็นด่านสุดท้าย |
 | Idempotency | `Idempotency-Key` บังคับกับ endpoint ที่สร้างรายการลงทะเบียน (และเงินใน P2) ผูกกับผู้ใช้/IP + hash ของ body |
 | Errors | ไม่ส่ง stack trace; ส่ง `requestId` ให้ตามรอยใน log |
 | Logging | pino JSON + request id, redact `authorization`, `cookie`, `set-cookie`, `password`, `token` |
@@ -21,5 +21,8 @@
 | PDPA | บันทึกเวลาและเวอร์ชันความยินยอมทุกการลงทะเบียน, งบประมาณไม่แสดงบน portal |
 
 ## ระยะถัดไป
-- P2: field encryption AES-256-GCM (`FIELD_ENCRYPTION_KEY`) สำหรับเลขบัญชีคืนเงิน/เลขผู้เสียภาษี, private bucket + presigned URL อายุสั้น, ตรวจ MIME จาก magic number, Redis throttler storage
+- ✅ P2: field encryption AES-256-GCM (`FIELD_ENCRYPTION_KEY`, IV สุ่มทุกค่า, ตรวจ auth tag) สำหรับเลขบัญชีคืนเงิน — แสดงแบบปิดบัง, การดูเลขเต็มต้องมี `refund:refund` และถูกบันทึก audit, ไม่ log เลขบัญชี (pino redact `req.body.accountNo`)
+- ✅ P2: สลิปเก็บใน private bucket ส่งผ่าน API ที่ตรวจสิทธิ์ (ไม่เปิด storage สู่ภายนอก), ตรวจชนิดไฟล์จาก magic number, SHA-256 กันสลิปซ้ำ
+- ✅ P2: Separation of duties ด้านการเงิน (ตรวจสลิป, ยกเลิกรับเงิน, ยืนยันยอดกะ, รับชุดนำส่ง, อนุมัติ/จ่ายคืนเงิน) บังคับที่ API
+- ✅ P2: ESLint (`pnpm lint`) — typescript-eslint, react-hooks, next
 - P3: token ลิงก์เชิญ (hash, ใช้ครั้งเดียว), ตรวจไฟล์ Excel นำเข้า

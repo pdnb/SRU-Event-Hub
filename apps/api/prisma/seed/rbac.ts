@@ -83,7 +83,7 @@ export const ROLES: { code: string; nameTh: string; description: string; permiss
     permissions: [
       ...pick(['payment'], ['view', 'verify', 'export']),
       ...pick(['finance_batch'], ['view', 'create', 'submit', 'reconcile', 'export']),
-      ...pick(['cashier'], ['view', 'approve']),
+      ...pick(['cashier'], ['view', 'approve', 'void']),
       ...pick(['refund'], ['view', 'create']),
       ...pick(['event', 'registration', 'report', 'receipt'], ['view', 'export']),
     ],

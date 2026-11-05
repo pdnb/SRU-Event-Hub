@@ -28,7 +28,7 @@ interface Item {
   transferredAt: string | null;
   verifiedAt: string | null;
   verifiedByName: string | null;
-  receipt: { bookNo: string; receiptNo: string; issuedAt: string } | null;
+  receipt: { id: string; bookNo: string; receiptNo: string; issuedAt: string } | null;
 }
 type Detail = FinanceBatchDto & { items: Item[] };
 
@@ -56,6 +56,17 @@ export default function FinanceBatchDetailPage({ params }: { params: Promise<{ i
   const act = useMutation({
     mutationFn: (a: 'submit' | 'receive') => api.post(`/finance/batches/${id}/${a}`),
     onSuccess: (_, a) => refresh(a === 'submit' ? 'ส่งชุดนำส่งให้กองคลังแล้ว' : 'บันทึกการรับชุดนำส่งแล้ว'),
+    onError: msg.error,
+  });
+  const [voidingReceipt, setVoidingReceipt] = useState<Item | null>(null);
+  const [voidReason, setVoidReason] = useState('');
+  const voidReceipt = useMutation({
+    mutationFn: () => api.post(`/finance/batches/receipts/${voidingReceipt!.receipt!.id}/void`, { reason: voidReason }),
+    onSuccess: () => {
+      setVoidingReceipt(null);
+      setVoidReason('');
+      refresh('ยกเลิกเลขที่ใบเสร็จแล้ว บันทึกเลขใหม่ได้');
+    },
     onError: msg.error,
   });
   const ret = useMutation({
@@ -126,7 +137,7 @@ export default function FinanceBatchDetailPage({ params }: { params: Promise<{ i
       <Card>
         <Descriptions column={{ xs: 1, md: 2 }} size="small" bordered>
           <Descriptions.Item label="สถานะ">
-            <StatusTag status={b.status} />
+            <StatusTag status={b.status} kind="batch" />
           </Descriptions.Item>
           <Descriptions.Item label="หน่วยงาน">{b.organizationName}</Descriptions.Item>
           <Descriptions.Item label="ยอดรวม">
@@ -181,11 +192,38 @@ export default function FinanceBatchDetailPage({ params }: { params: Promise<{ i
             { title: 'ผู้ชำระ', render: (_, r) => <>{r.payerName}<div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{r.referenceNo}</Typography.Text></div></> },
             { title: 'ตรวจสอบโดย', render: (_, r) => <>{r.verifiedByName}<div><Typography.Text type="secondary" style={{ fontSize: 12 }}><ThaiDate value={r.verifiedAt} time /></Typography.Text></div></> },
             { title: 'จำนวนเงิน', dataIndex: 'amount', align: 'right', width: 130, render: (v: string) => <Money value={v} /> },
-            { title: 'เล่มที่/เลขที่ใบเสร็จ', width: 170, render: (_, r) => (r.receipt ? `${r.receipt.bookNo}/${r.receipt.receiptNo}` : '-') },
+            {
+              title: 'เล่มที่/เลขที่ใบเสร็จ',
+              width: 210,
+              render: (_, r) =>
+                r.receipt ? (
+                  <Space size={4}>
+                    {`${r.receipt.bookNo}/${r.receipt.receiptNo}`}
+                    {can('receipt:void') && ['RECEIVED', 'RECEIPTS_ISSUED'].includes(b.status) && (
+                      <Button size="small" type="link" danger onClick={() => setVoidingReceipt(r)}>ยกเลิก</Button>
+                    )}
+                  </Space>
+                ) : (
+                  '-'
+                ),
+            },
             { title: 'วันที่ออกใบเสร็จ', width: 140, render: (_, r) => (r.receipt ? <ThaiDate value={r.receipt.issuedAt} /> : '-') },
           ]}
         />
       </Card>
+
+      <Modal
+        open={!!voidingReceipt}
+        title={`ยกเลิกเลขที่ใบเสร็จ ${voidingReceipt?.receipt ? `${voidingReceipt.receipt.bookNo}/${voidingReceipt.receipt.receiptNo}` : ''}`}
+        okText="ยกเลิกใบเสร็จ"
+        cancelText="ปิด"
+        okButtonProps={{ danger: true, disabled: voidReason.trim().length < 3, loading: voidReceipt.isPending }}
+        onOk={() => voidReceipt.mutate()}
+        onCancel={() => setVoidingReceipt(null)}
+      >
+        <Typography.Paragraph>เลขที่เดิมจะถูกเก็บไว้พร้อมสถานะ &quot;ยกเลิก&quot; และชุดนำส่งจะกลับเป็น &quot;กองคลังรับแล้ว&quot; เพื่อบันทึกเลขที่ใหม่</Typography.Paragraph>
+        <Input.TextArea rows={3} value={voidReason} onChange={(e) => setVoidReason(e.target.value)} placeholder="เหตุผล เช่น พิมพ์เลขผิด" maxLength={1000} showCount />
+      </Modal>
 
       <Modal open={returning} title="ส่งชุดนำส่งกลับให้หน่วยงานแก้ไข" okText="ส่งกลับ" cancelText="ยกเลิก" okButtonProps={{ danger: true, disabled: reason.trim().length < 3, loading: ret.isPending }} onOk={() => ret.mutate()} onCancel={() => setReturning(false)}>
         <Input.TextArea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="เหตุผล เช่น ยอดเงินไม่ตรงกับเงินที่นำส่ง" maxLength={1000} showCount />

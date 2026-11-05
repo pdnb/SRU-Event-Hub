@@ -47,3 +47,10 @@ a {
     display: none !important;
   }
 }
+
+/* Printing a proof of payment (cashier): only the proof block is printed. */
+@media print {
+  body * { visibility: hidden; }
+  #proof-of-payment, #proof-of-payment * { visibility: visible; }
+  #proof-of-payment { position: absolute; left: 0; top: 0; width: 100%; padding: 16px; }
+}

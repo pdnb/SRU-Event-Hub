@@ -61,8 +61,8 @@ const MENU: Item[] = [
     children: [
       { key: '/admin/finance/batches', label: 'ชุดนำส่งกองคลัง', icon: null, perm: 'finance_batch:view' },
       { key: '/admin/finance/settings', label: 'บัญชีรับเงิน / รหัสรายได้', icon: null, perm: 'bank_account:view' },
-      { key: 'cashier', label: 'รับชำระหน้างาน', icon: null, phase: 'P2b' },
-      { key: 'refunds', label: 'คืนเงิน', icon: null, phase: 'P2b' },
+      { key: '/admin/finance/cashier', label: 'รับชำระหน้างาน', icon: null, perm: 'cashier:view' },
+      { key: '/admin/finance/refunds', label: 'คืนเงิน', icon: null, perm: 'refund:view' },
     ],
   },
   { key: 'checkin', label: 'ตรวจสอบการเข้าร่วม', icon: <QrcodeOutlined />, phase: 'P4' },
@@ -73,8 +73,8 @@ const MENU: Item[] = [
   { key: 'reports', label: 'รายงาน', icon: <BarChartOutlined />, phase: 'P5' },
   { key: '/admin/organizations', label: 'จัดการหน่วยงาน', icon: <ClusterOutlined />, perm: 'organization:view' },
   { key: '/admin/users', label: 'จัดการผู้ใช้งาน', icon: <TeamOutlined />, perm: 'user:view' },
-  { key: 'audit', label: 'Audit Log', icon: <AuditOutlined />, phase: 'P2b', perm: 'audit_log:view' },
-  { key: 'settings', label: 'ตั้งค่าระบบ', icon: <SettingOutlined />, phase: 'P2b', perm: 'system_setting:view' },
+  { key: '/admin/audit-logs', label: 'Audit Log', icon: <AuditOutlined />, perm: 'audit_log:view' },
+  { key: '/admin/settings', label: 'ตั้งค่าระบบ', icon: <SettingOutlined />, perm: 'system_setting:view' },
 ];
 
 function toMenuItems(items: Item[], can: (p: PermissionCode) => boolean): MenuProps['items'] {

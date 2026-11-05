@@ -154,6 +154,7 @@ model Event {
   feeRates           EventFeeRate[]
   paymentOrders      PaymentOrder[]
   financeBatches     FinanceBatch[]
+  cashierSessions    CashierSession[]
   coverImage         File?                  @relation("EventCover", fields: [coverImageFileId], references: [id], onDelete: SetNull)
   tags               EventTag[]
   images             EventImage[]

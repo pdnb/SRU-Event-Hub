@@ -139,6 +139,7 @@ model PaymentOrder {
   feeRate      EventFeeRate?        @relation(fields: [feeRateId], references: [id], onDelete: SetNull)
   payments     Payment[]
   ledger       PaymentLedgerEntry[]
+  refunds      Refund[]
 
   @@index([eventId, status])
   @@index([registrationId])
@@ -148,37 +149,40 @@ model PaymentOrder {
 
 /// A payment attempt (transfer slip or on-site cash). Verified payments go into a finance batch.
 model Payment {
-  id            String         @id @default(uuid(7)) @db.Uuid
-  paymentNo     String         @unique @map("payment_no") @db.VarChar(30) // PAY-2570-000001
-  orderId       String         @map("order_id") @db.Uuid
-  channel       PaymentChannel
+  id               String         @id @default(uuid(7)) @db.Uuid
+  paymentNo        String         @unique @map("payment_no") @db.VarChar(30) // PAY-2570-000001
+  orderId          String         @map("order_id") @db.Uuid
+  channel          PaymentChannel
   /// Immutable (trigger).
-  amount        Decimal        @db.Decimal(12, 2)
-  status        PaymentStatus  @default(SUBMITTED)
-  slipFileId    String?        @map("slip_file_id") @db.Uuid
+  amount           Decimal        @db.Decimal(12, 2)
+  status           PaymentStatus  @default(SUBMITTED)
+  slipFileId       String?        @map("slip_file_id") @db.Uuid
   /// SHA-256 of the slip bytes – the same slip cannot back two live payments (partial unique in SQL).
-  slipSha256    String?        @map("slip_sha256") @db.Char(64)
-  transferredAt DateTime?      @map("transferred_at") @db.Timestamptz(6)
-  payerNote     String?        @map("payer_note") @db.VarChar(500)
-  submittedById String?        @map("submitted_by_id") @db.Uuid
-  submittedAt   DateTime       @default(now()) @map("submitted_at") @db.Timestamptz(6)
-  verifiedById  String?        @map("verified_by_id") @db.Uuid
-  verifiedAt    DateTime?      @map("verified_at") @db.Timestamptz(6)
-  rejectReason  String?        @map("reject_reason") @db.VarChar(1000)
-  voidedById    String?        @map("voided_by_id") @db.Uuid
-  voidedAt      DateTime?      @map("voided_at") @db.Timestamptz(6)
-  voidReason    String?        @map("void_reason") @db.VarChar(1000)
-  version       Int            @default(1)
-  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  slipSha256       String?        @map("slip_sha256") @db.Char(64)
+  transferredAt    DateTime?      @map("transferred_at") @db.Timestamptz(6)
+  payerNote        String?        @map("payer_note") @db.VarChar(500)
+  submittedById    String?        @map("submitted_by_id") @db.Uuid
+  submittedAt      DateTime       @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  verifiedById     String?        @map("verified_by_id") @db.Uuid
+  /// On-site cash: the cashier session that received it.
+  cashierSessionId String?        @map("cashier_session_id") @db.Uuid
+  verifiedAt       DateTime?      @map("verified_at") @db.Timestamptz(6)
+  rejectReason     String?        @map("reject_reason") @db.VarChar(1000)
+  voidedById       String?        @map("voided_by_id") @db.Uuid
+  voidedAt         DateTime?      @map("voided_at") @db.Timestamptz(6)
+  voidReason       String?        @map("void_reason") @db.VarChar(1000)
+  version          Int            @default(1)
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  order       PaymentOrder         @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  slipFile    File?                @relation("PaymentSlip", fields: [slipFileId], references: [id], onDelete: Restrict)
-  submittedBy User?                @relation("PaymentSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
-  verifiedBy  User?                @relation("PaymentVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
-  ledger      PaymentLedgerEntry[]
-  batchItems  FinanceBatchItem[]
-  receipts    ReceiptRecord[]
+  order          PaymentOrder         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  slipFile       File?                @relation("PaymentSlip", fields: [slipFileId], references: [id], onDelete: Restrict)
+  submittedBy    User?                @relation("PaymentSubmittedBy", fields: [submittedById], references: [id], onDelete: SetNull)
+  verifiedBy     User?                @relation("PaymentVerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  cashierSession CashierSession?      @relation(fields: [cashierSessionId], references: [id], onDelete: Restrict)
+  ledger         PaymentLedgerEntry[]
+  batchItems     FinanceBatchItem[]
+  receipts       ReceiptRecord[]
 
   @@index([orderId])
   @@index([status, submittedAt])
@@ -283,4 +287,85 @@ model ReceiptRecord {
   @@index([paymentId])
   @@index([batchId])
   @@map("receipt_records")
+}
+
+enum CashierSessionStatus {
+  OPEN // รับเงินอยู่
+  CLOSED // ปิดกะ นับเงินแล้ว
+  REMITTED // นำส่งเงินสดแล้ว (มีเลขที่ใบนำส่ง)
+  CONFIRMED // การเงินหน่วยงานยืนยันยอด → รายการเข้าชุดนำส่งได้
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PAID
+  CANCELLED
+}
+
+/// กะรับเงินหน้างาน. One OPEN session per cashier per event (partial unique in SQL).
+model CashierSession {
+  id             String               @id @default(uuid(7)) @db.Uuid
+  sessionNo      String               @unique @map("session_no") @db.VarChar(30) // CS-2570-000001
+  eventId        String               @map("event_id") @db.Uuid
+  cashierId      String               @map("cashier_id") @db.Uuid
+  status         CashierSessionStatus @default(OPEN)
+  openingFloat   Decimal              @default(0) @map("opening_float") @db.Decimal(12, 2)
+  openedAt       DateTime             @default(now()) @map("opened_at") @db.Timestamptz(6)
+  /// Frozen at close: SUM of live ONSITE payments in the session.
+  expectedAmount Decimal?             @map("expected_amount") @db.Decimal(12, 2)
+  /// Cash counted by the cashier (excluding the opening float).
+  countedAmount  Decimal?             @map("counted_amount") @db.Decimal(12, 2)
+  closedAt       DateTime?            @map("closed_at") @db.Timestamptz(6)
+  closeNote      String?              @map("close_note") @db.VarChar(1000)
+  remittanceNo   String?              @map("remittance_no") @db.VarChar(50) // เลขที่ใบนำส่งเงิน
+  remittedAt     DateTime?            @map("remitted_at") @db.Timestamptz(6)
+  confirmedById  String?              @map("confirmed_by_id") @db.Uuid
+  confirmedAt    DateTime?            @map("confirmed_at") @db.Timestamptz(6)
+  version        Int                  @default(1)
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  event       Event     @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  cashier     User      @relation("CashierSessionCashier", fields: [cashierId], references: [id], onDelete: Restrict)
+  confirmedBy User?     @relation("CashierSessionConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  payments    Payment[]
+
+  @@index([eventId, status])
+  @@index([cashierId, status])
+  @@map("cashier_sessions")
+}
+
+/// คำขอคืนเงิน. Requester ≠ approver (SoD). Payee account number is AES-256-GCM encrypted.
+model Refund {
+  id              String       @id @default(uuid(7)) @db.Uuid
+  refundNo        String       @unique @map("refund_no") @db.VarChar(30) // RF-2570-000001
+  orderId         String       @map("order_id") @db.Uuid
+  /// Immutable (trigger).
+  amount          Decimal      @db.Decimal(12, 2)
+  reason          String       @db.VarChar(1000)
+  status          RefundStatus @default(REQUESTED)
+  payeeName       String       @map("payee_name") @db.VarChar(300)
+  bankName        String       @map("bank_name") @db.VarChar(150)
+  accountNoEnc    String       @map("account_no_enc") @db.VarChar(500)
+  accountNoMasked String       @map("account_no_masked") @db.VarChar(30)
+  requestedById   String       @map("requested_by_id") @db.Uuid
+  decidedById     String?      @map("decided_by_id") @db.Uuid
+  decidedAt       DateTime?    @map("decided_at") @db.Timestamptz(6)
+  rejectReason    String?      @map("reject_reason") @db.VarChar(1000)
+  paidById        String?      @map("paid_by_id") @db.Uuid
+  paidAt          DateTime?    @map("paid_at") @db.Timestamptz(6)
+  paidRef         String?      @map("paid_ref") @db.VarChar(100)
+  version         Int          @default(1)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  order       PaymentOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  requestedBy User         @relation("RefundRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  decidedBy   User?        @relation("RefundDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([status, createdAt])
+  @@map("refunds")
 }

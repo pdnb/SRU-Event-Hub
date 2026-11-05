@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Calendar, Card, Grid, List, Typography } from 'antd';
+import { Badge, Calendar, Card, Grid, Typography } from 'antd';
+import { List } from '@/components/SimpleList';
 import type { Dayjs } from 'dayjs';
 import Link from 'next/link';
 import { useState } from 'react';

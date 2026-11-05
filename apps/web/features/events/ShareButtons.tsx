@@ -2,13 +2,12 @@
 
 import { CopyOutlined, FacebookFilled, ShareAltOutlined } from '@ant-design/icons';
 import { App, Button, Flex } from 'antd';
-import { useEffect, useState } from 'react';
+import { useClientValue } from '@/hooks/useClientValue';
 
 export function ShareButtons({ title, path }: { title: string; path: string }) {
   const { message } = App.useApp();
-  // Detected after mount so server and first client render match.
-  const [canNativeShare, setCanNativeShare] = useState(false);
-  useEffect(() => setCanNativeShare('share' in navigator), []);
+  // false on the server and during hydration, the real value afterwards.
+  const canNativeShare = useClientValue(() => 'share' in navigator, false);
   const url = () => (typeof window === 'undefined' ? path : `${window.location.origin}${path}`);
   const open = (href: string) => window.open(href, '_blank', 'noopener,noreferrer,width=600,height=500');
 

@@ -7,6 +7,8 @@ export const api = createApiClient({
   baseURL: API_URL,
   onUnauthenticated: () => {
     if (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) {
+      // Full reload on purpose: drops every cached query of the expired session.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
     }
   },

@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { randomUUID } from 'node:crypto';
 import { LoggerModule } from 'nestjs-pino';
+import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { CsrfGuard, JwtAuthGuard, PermissionsGuard } from './auth/guards';
 import { CategoriesModule } from './categories/categories.module';
@@ -11,7 +12,8 @@ import { CommonModule } from './common/common.module';
 import { AllExceptionsFilter } from './common/http-exception.filter';
 import { IdempotencyInterceptor } from './common/idempotency.interceptor';
 import { ResponseEnvelopeInterceptor } from './common/response.interceptor';
-import { validateEnv } from './config/env';
+import { Env, validateEnv } from './config/env';
+import { RedisThrottlerStorage } from './common/redis-throttler.storage';
 import { EventsModule } from './events/events.module';
 import { HealthController } from './health/health.controller';
 import { OrganizationsModule } from './organizations/organizations.module';
@@ -34,18 +36,26 @@ import { UsersModule } from './users/users.module';
           return id;
         },
         redact: {
-          paths: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]', 'req.body.password', 'req.body.token'],
+          paths: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]', 'req.body.password', 'req.body.token', 'req.body.accountNo'],
           censor: '[redacted]',
         },
         autoLogging: { ignore: (req) => req.url?.startsWith('/api/v1/health') ?? false },
         transport: process.env.NODE_ENV === 'development' ? { target: 'pino/file', options: { destination: 1 } } : undefined,
       },
     }),
-    // Default rate limit; endpoints tighten it with @Throttle. (Redis-backed storage: Phase 2, docs/OPEN_QUESTIONS.md)
-    ThrottlerModule.forRoot({
-      throttlers: [{ name: 'default', ttl: 60_000, limit: 300 }],
-      // Only for automated e2e runs (many requests from one IP). Refused in production by validateEnv.
-      skipIf: () => process.env.THROTTLE_DISABLED === 'true',
+    // Default rate limit; endpoints tighten it with @Throttle.
+    // Counters live in Redis so all API replicas share one limit (in-memory only when throttling is off).
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) => {
+        const disabled = process.env.THROTTLE_DISABLED === 'true';
+        return {
+          throttlers: [{ name: 'default', ttl: 60_000, limit: 300 }],
+          // Only for automated e2e runs (many requests from one IP). Refused in production by validateEnv.
+          skipIf: () => disabled,
+          ...(disabled ? {} : { storage: new RedisThrottlerStorage(config.get('REDIS_URL', { infer: true })) }),
+        };
+      },
     }),
     PrismaModule,
     CommonModule,
@@ -56,6 +66,7 @@ import { UsersModule } from './users/users.module';
     EventsModule,
     RegistrationsModule,
     PaymentsModule,
+    AdminModule,
   ],
   controllers: [HealthController],
   providers: [

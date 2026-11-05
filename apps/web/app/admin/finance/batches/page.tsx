@@ -110,7 +110,7 @@ export default function FinanceBatchesPage() {
               { title: 'รายการ', dataIndex: 'itemCount', align: 'right', width: 80 },
               { title: 'ยอดรวม', dataIndex: 'totalAmount', align: 'right', width: 140, render: (v: string) => <Money value={v} /> },
               { title: 'ใบเสร็จ', width: 90, align: 'right', render: (_, r) => `${r.receiptCount}/${r.itemCount}` },
-              { title: 'สถานะ', dataIndex: 'status', width: 140, render: (v: string) => <StatusTag status={v} /> },
+              { title: 'สถานะ', dataIndex: 'status', width: 140, render: (v: string) => <StatusTag status={v} kind="batch" /> },
               { title: 'จัดทำ', width: 180, render: (_, r) => <>{r.createdByName}<div><Typography.Text type="secondary" style={{ fontSize: 12 }}><ThaiDate value={r.createdAt} time /></Typography.Text></div></> },
             ]}
           />

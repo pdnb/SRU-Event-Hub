@@ -25,18 +25,20 @@ const TABS = [
 function SlipPreview({ paymentId }: { paymentId: string }) {
   const [file, setFile] = useState<{ url: string; type: string } | null>(null);
   const [error, setError] = useState(false);
+  // Mounted with key={paymentId}, so state starts fresh for every slip.
   useEffect(() => {
-    let revoked: string | null = null;
-    setFile(null);
-    setError(false);
+    let cancelled = false;
+    let objectUrl: string | null = null;
     fetchObjectUrl(`/finance/payments/${paymentId}/slip`)
       .then((f) => {
-        revoked = f.url;
-        setFile(f);
+        objectUrl = f.url;
+        if (cancelled) URL.revokeObjectURL(f.url);
+        else setFile(f);
       })
-      .catch(() => setError(true));
+      .catch(() => !cancelled && setError(true));
     return () => {
-      if (revoked) URL.revokeObjectURL(revoked);
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [paymentId]);
   if (error) return <Alert type="error" title="ไม่สามารถโหลดหลักฐานการโอนได้" />;
@@ -150,7 +152,7 @@ export default function FinancePaymentsPage() {
               { title: 'จำนวนเงิน', dataIndex: 'amount', align: 'right', width: 130, render: (v: string) => <Money value={v} /> },
               { title: 'วันเวลาที่โอน', dataIndex: 'transferredAt', width: 160, render: (v: string | null) => <ThaiDate value={v} time /> },
               { title: 'ส่งหลักฐานเมื่อ', dataIndex: 'submittedAt', width: 160, render: (v: string) => <ThaiDate value={v} time /> },
-              { title: 'สถานะ', dataIndex: 'status', width: 130, render: (v: string) => <StatusTag status={v} /> },
+              { title: 'สถานะ', dataIndex: 'status', width: 130, render: (v: string) => <StatusTag status={v} kind="payment" /> },
               { title: 'ชุดนำส่ง / ใบเสร็จ', width: 170, render: (_, r) => (r.batchNo ? <>{r.batchNo}{r.receiptNo ? <div>{r.receiptNo}</div> : null}</> : '-') },
             ]}
           />
@@ -179,12 +181,12 @@ export default function FinancePaymentsPage() {
                 <ThaiDate value={open.transferredAt} time />
               </Descriptions.Item>
               <Descriptions.Item label="สถานะ">
-                <StatusTag status={open.status} /> {open.verifiedByName && <Typography.Text type="secondary">โดย {open.verifiedByName} <ThaiDate value={open.verifiedAt} time /></Typography.Text>}
+                <StatusTag status={open.status} kind="payment" /> {open.verifiedByName && <Typography.Text type="secondary">โดย {open.verifiedByName} <ThaiDate value={open.verifiedAt} time /></Typography.Text>}
               </Descriptions.Item>
               {open.rejectReason && <Descriptions.Item label="เหตุผลที่ไม่ผ่าน">{open.rejectReason}</Descriptions.Item>}
             </Descriptions>
             <Card size="small" title="หลักฐานการโอนเงิน" style={{ marginTop: 16 }}>
-              {open.hasSlip ? <SlipPreview paymentId={open.id} /> : <Typography.Text type="secondary">ไม่มีไฟล์แนบ</Typography.Text>}
+              {open.hasSlip ? <SlipPreview key={open.id} paymentId={open.id} /> : <Typography.Text type="secondary">ไม่มีไฟล์แนบ</Typography.Text>}
             </Card>
             {open.status === 'SUBMITTED' && can('payment:verify') && (
               <Flex justify="flex-end" gap={8} style={{ marginTop: 16 }}>

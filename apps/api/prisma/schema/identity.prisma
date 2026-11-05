@@ -69,6 +69,10 @@ model User {
   batchesCreated    FinanceBatch[]       @relation("BatchCreatedBy")
   batchesReceived   FinanceBatch[]       @relation("BatchReceivedBy")
   receiptsRecorded  ReceiptRecord[]      @relation("ReceiptRecordedBy")
+  cashierSessions   CashierSession[]     @relation("CashierSessionCashier")
+  cashierConfirms   CashierSession[]     @relation("CashierSessionConfirmedBy")
+  refundsRequested  Refund[]             @relation("RefundRequestedBy")
+  refundsDecided    Refund[]             @relation("RefundDecidedBy")
 
   @@index([status])
   @@map("users")
