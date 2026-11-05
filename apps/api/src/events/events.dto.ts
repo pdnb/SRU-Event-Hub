@@ -12,6 +12,7 @@ import {
   IsString,
   IsUUID,
   Matches,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -38,6 +39,15 @@ export class RegistrationFieldDto {
   @IsOptional() @IsInt() @Min(1) maxLength?: number;
   @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({ each: true }) @Type(() => RegistrationFieldOptionDto)
   options?: RegistrationFieldOptionDto[];
+}
+
+export class FeeRateInputDto {
+  @IsString() @MinLength(1) @MaxLength(200) nameTh!: string;
+  @Matches(MONEY, { message: 'จำนวนเงินไม่ถูกต้อง' }) amount!: string;
+  /** null = every participant type. */
+  @IsOptional() @IsUUID() participantTypeId?: string | null;
+  @IsOptional() @IsDateString() validFrom?: string | null;
+  @IsOptional() @IsDateString() validUntil?: string | null;
 }
 
 export class CreateEventDto {
@@ -68,6 +78,12 @@ export class CreateEventDto {
   @IsOptional() @IsArray() @ArrayMaxSize(30) @IsString({ each: true }) tags?: string[];
   @IsOptional() @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => RegistrationFieldDto)
   registrationFields?: RegistrationFieldDto[];
+  /** Fee rates. Sending the list replaces all rates; an empty list makes the event free. */
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @ValidateNested({ each: true }) @Type(() => FeeRateInputDto)
+  feeRates?: FeeRateInputDto[];
+  @IsOptional() @IsInt() @Min(1) @Max(720) paymentWindowHours?: number;
+  @IsOptional() @IsUUID() bankAccountId?: string | null;
+  @IsOptional() @IsUUID() incomeCodeId?: string | null;
   @IsOptional() @IsInt() version?: number;
 }
 
@@ -98,6 +114,12 @@ export class UpdateEventDto implements Partial<CreateEventDto> {
   @IsOptional() @IsArray() @ArrayMaxSize(30) @IsString({ each: true }) tags?: string[];
   @IsOptional() @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => RegistrationFieldDto)
   registrationFields?: RegistrationFieldDto[];
+  /** Fee rates. Sending the list replaces all rates; an empty list makes the event free. */
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @ValidateNested({ each: true }) @Type(() => FeeRateInputDto)
+  feeRates?: FeeRateInputDto[];
+  @IsOptional() @IsInt() @Min(1) @Max(720) paymentWindowHours?: number;
+  @IsOptional() @IsUUID() bankAccountId?: string | null;
+  @IsOptional() @IsUUID() incomeCodeId?: string | null;
   @IsInt() version!: number;
 }
 

@@ -27,6 +27,17 @@ export const eventFormSchema = z
     isFeatured: z.boolean(),
     participantTypeIds: z.array(z.string()),
     tags: z.array(z.string().max(100)).max(30),
+    feeRates: z.array(
+      z.object({
+        nameTh: z.string().trim().min(1, 'กรุณาระบุชื่ออัตรา').max(200),
+        amount: moneyString,
+        participantTypeId: z.string().uuid().nullish(),
+        validRange: z.tuple([z.string().nullable(), z.string().nullable()]).nullish(),
+      }),
+    ),
+    paymentWindowHours: z.number().int().min(1, 'อย่างน้อย 1 ชั่วโมง').max(720, 'ไม่เกิน 720 ชั่วโมง'),
+    bankAccountId: z.string().uuid().nullish(),
+    incomeCodeId: z.string().uuid().nullish(),
     registrationFields: z.array(
       z
         .object({
@@ -41,6 +52,10 @@ export const eventFormSchema = z
           message: 'กรุณาระบุตัวเลือก (บรรทัดละ 1 ตัวเลือก)',
         }),
     ),
+  })
+  .refine((v) => !v.feeRates.some((r) => Number(r.amount) > 0) || !!v.bankAccountId, {
+    path: ['bankAccountId'],
+    message: 'กิจกรรมที่มีค่าลงทะเบียนต้องระบุบัญชีรับเงิน',
   })
   .refine((v) => new Date(v.eventRange[1]) > new Date(v.eventRange[0]), { path: ['eventRange'], message: 'วันสิ้นสุดต้องอยู่หลังวันเริ่มต้น' })
   .refine((v) => !v.registrationRange || new Date(v.registrationRange[1]) <= new Date(v.eventRange[1]), {
@@ -96,6 +111,16 @@ export function toPayload(v: EventFormValues) {
     isFeatured: v.isFeatured,
     participantTypeIds: v.participantTypeIds,
     tags: v.tags,
+    feeRates: v.feeRates.map((r) => ({
+      nameTh: r.nameTh,
+      amount: r.amount,
+      participantTypeId: r.participantTypeId ?? null,
+      validFrom: r.validRange?.[0] ?? null,
+      validUntil: r.validRange?.[1] ?? null,
+    })),
+    paymentWindowHours: v.paymentWindowHours,
+    bankAccountId: v.bankAccountId ?? null,
+    incomeCodeId: v.incomeCodeId ?? null,
     registrationFields: v.registrationFields.map((f) => ({
       key: f.key,
       labelTh: f.labelTh,

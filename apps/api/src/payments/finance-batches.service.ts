@@ -1,0 +1,368 @@
+import { HttpStatus, Injectable, StreamableFile } from '@nestjs/common';
+import type { FinanceBatchDto } from '@sru/shared-types';
+import { bahtText, fiscalYearBE, formatThaiDate, formatThaiDateTime, sanitizeSpreadsheetCell } from '@sru/shared-utils';
+import ExcelJS from 'exceljs';
+import type { AuthUser } from '../auth/auth.types';
+import { AccessService } from '../common/access.service';
+import { AuditService } from '../common/audit.service';
+import type { RequestMeta } from '../common/decorators';
+import { AppError, Errors } from '../common/errors';
+import { moneyOut } from '../common/money';
+import { Paginated } from '../common/pagination';
+import { SequenceService } from '../common/sequence.service';
+import { Prisma } from '../generated/prisma/client';
+import { PrismaService, Tx } from '../prisma/prisma.service';
+import { BatchQueryDto, CreateBatchDto, RecordReceiptsDto } from './payments.dto';
+
+const batchInclude = {
+  event: { select: { id: true, code: true, titleTh: true, startAt: true } },
+  organization: { select: { id: true, nameTh: true } },
+  createdBy: { select: { id: true, displayName: true } },
+  receivedBy: { select: { id: true, displayName: true } },
+  _count: { select: { receipts: { where: { status: { not: 'VOIDED' } } } } },
+} satisfies Prisma.FinanceBatchInclude;
+type BatchRow = Prisma.FinanceBatchGetPayload<{ include: typeof batchInclude }>;
+
+const itemInclude = {
+  payment: {
+    include: {
+      order: { include: { registration: { select: { referenceNo: true } } } },
+      verifiedBy: { select: { displayName: true } },
+      receipts: { where: { status: { not: 'VOIDED' } } },
+    },
+  },
+} satisfies Prisma.FinanceBatchItemInclude;
+
+/**
+ * ชุดนำส่งกองคลัง (spec §4.7). Lifecycle:
+ *   DRAFT ─submit→ SUBMITTED ─receive→ RECEIVED ─(all receipt numbers recorded)→ RECEIPTS_ISSUED
+ *                           └return→ RETURNED (items released, organizer prepares a new batch)
+ * Separation of duties: the กองคลัง officer who receives must not be the preparer/submitter.
+ * Items and totals are frozen at creation (DB trigger), the report snapshot at submission.
+ */
+@Injectable()
+export class FinanceBatchesService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly access: AccessService,
+    private readonly audit: AuditService,
+    private readonly seq: SequenceService,
+  ) {}
+
+  /** Verified payments of an event that are not yet in a live batch. */
+  async eligible(eventId: string, user: AuthUser) {
+    const event = await this.event(eventId);
+    await this.access.assertOrg(user, 'finance_batch:create', event.organizationId);
+    const rows = await this.eligibleWhere(this.prisma, eventId);
+    const total = rows.reduce((a, p) => a.plus(p.amount), new Prisma.Decimal(0));
+    return {
+      event: { id: event.id, code: event.code, titleTh: event.titleTh },
+      count: rows.length,
+      totalAmount: moneyOut(total),
+      payments: rows.map((p) => ({
+        id: p.id,
+        paymentNo: p.paymentNo,
+        orderNo: p.order.orderNo,
+        payerName: p.order.payerName,
+        amount: moneyOut(p.amount),
+        verifiedAt: p.verifiedAt?.toISOString() ?? null,
+      })),
+    };
+  }
+
+  private eligibleWhere(db: Tx | PrismaService, eventId: string) {
+    return db.payment.findMany({
+      where: { status: 'VERIFIED', order: { eventId }, batchItems: { none: { isActive: true } } },
+      include: { order: true },
+      orderBy: { verifiedAt: 'asc' },
+    });
+  }
+
+  async create(dto: CreateBatchDto, user: AuthUser, meta: RequestMeta) {
+    const event = await this.event(dto.eventId);
+    await this.access.assertOrg(user, 'finance_batch:create', event.organizationId);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Serialise batch creation per event so two officers cannot grab the same payments.
+        await tx.$queryRaw`SELECT id FROM events WHERE id = ${event.id}::uuid FOR UPDATE`;
+        let payments = await this.eligibleWhere(tx, event.id);
+        if (dto.paymentIds) {
+          const wanted = new Set(dto.paymentIds);
+          payments = payments.filter((p) => wanted.has(p.id));
+          if (payments.length !== wanted.size) {
+            throw Errors.validation('มีรายการที่ยังไม่ผ่านการตรวจสอบ ไม่ใช่ของกิจกรรมนี้ หรืออยู่ในชุดนำส่งอื่นแล้ว');
+          }
+        }
+        if (!payments.length) throw Errors.invalidState('ไม่มีรายการชำระเงินที่ตรวจสอบแล้วและยังไม่ได้นำส่ง');
+        const total = payments.reduce((a, p) => a.plus(p.amount), new Prisma.Decimal(0));
+        const batch = await tx.financeBatch.create({
+          data: {
+            batchNo: await this.seq.next(tx, 'FB'),
+            organizationId: event.organizationId,
+            eventId: event.id,
+            totalAmount: total,
+            itemCount: payments.length,
+            note: dto.note || null,
+            createdById: user.id,
+            items: { create: payments.map((p) => ({ paymentId: p.id, amount: p.amount })) },
+          },
+        });
+        await this.audit.log(
+          { actorId: user.id, action: 'finance_batch.create', entityType: 'finance_batch', entityId: batch.id, after: { batchNo: batch.batchNo, total: total.toFixed(2), items: payments.length }, meta },
+          tx,
+        );
+        return { id: batch.id, batchNo: batch.batchNo };
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw Errors.conflict('PAYMENT_ALREADY_BATCHED', 'มีรายการที่อยู่ในชุดนำส่งอื่นแล้ว');
+      }
+      throw e;
+    }
+  }
+
+  async list(q: BatchQueryDto, user: AuthUser) {
+    const scope = await this.access.orgScope(user, 'finance_batch:view');
+    const where: Prisma.FinanceBatchWhereInput = {
+      ...(scope === 'ALL' ? {} : { organizationId: { in: scope } }),
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.eventId ? { eventId: q.eventId } : {}),
+      ...(q.search
+        ? { OR: [{ batchNo: q.search.trim().toUpperCase() }, { event: { titleTh: { contains: q.search, mode: 'insensitive' } } }, { event: { code: q.search.trim().toUpperCase() } }] }
+        : {}),
+    };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.financeBatch.findMany({ where, include: batchInclude, orderBy: { createdAt: q.order }, skip: q.skip, take: q.perPage }),
+      this.prisma.financeBatch.count({ where }),
+    ]);
+    return Paginated.of(rows.map((b) => this.dto(b)), total, q);
+  }
+
+  async detail(id: string, user: AuthUser) {
+    const b = await this.load(id, user, 'finance_batch:view');
+    const items = await this.prisma.financeBatchItem.findMany({ where: { batchId: id }, include: itemInclude, orderBy: { createdAt: 'asc' } });
+    return {
+      ...this.dto(b),
+      items: items.map((i) => ({
+        id: i.id,
+        isActive: i.isActive,
+        paymentId: i.paymentId,
+        paymentNo: i.payment.paymentNo,
+        orderNo: i.payment.order.orderNo,
+        referenceNo: i.payment.order.registration?.referenceNo ?? null,
+        payerName: i.payment.order.payerName,
+        amount: moneyOut(i.amount),
+        transferredAt: i.payment.transferredAt?.toISOString() ?? null,
+        verifiedAt: i.payment.verifiedAt?.toISOString() ?? null,
+        verifiedByName: i.payment.verifiedBy?.displayName ?? null,
+        receipt: i.payment.receipts[0]
+          ? { bookNo: i.payment.receipts[0].bookNo, receiptNo: i.payment.receipts[0].receiptNo, issuedAt: i.payment.receipts[0].issuedAt.toISOString().slice(0, 10) }
+          : null,
+      })),
+    };
+  }
+
+  async submit(id: string, user: AuthUser, meta: RequestMeta) {
+    const b = await this.load(id, user, 'finance_batch:submit');
+    const snapshot = await this.detail(id, user);
+    return this.transition(b.id, 'DRAFT', 'SUBMITTED', user, meta, {
+      submittedById: user.id,
+      submittedAt: new Date(),
+      // Frozen copy of exactly what was handed to กองคลัง.
+      snapshot: JSON.parse(JSON.stringify({ ...snapshot, generatedAt: new Date().toISOString() })) as Prisma.InputJsonValue,
+    });
+  }
+
+  async receive(id: string, user: AuthUser, meta: RequestMeta) {
+    const b = await this.load(id, user, 'finance_batch:receive');
+    this.assertNotPreparer(b, user);
+    return this.transition(b.id, 'SUBMITTED', 'RECEIVED', user, meta, { receivedById: user.id, receivedAt: new Date() });
+  }
+
+  /** กองคลัง returns the batch for correction; its payments become eligible for a new batch. */
+  async returnBatch(id: string, reason: string, user: AuthUser, meta: RequestMeta) {
+    const b = await this.load(id, user, 'finance_batch:receive');
+    this.assertNotPreparer(b, user);
+    return this.transition(b.id, 'SUBMITTED', 'RETURNED', user, meta, { returnedById: user.id, returnedAt: new Date(), returnReason: reason }, reason, async (tx) => {
+      await tx.financeBatchItem.updateMany({ where: { batchId: b.id }, data: { isActive: false } });
+    });
+  }
+
+  /** Records official receipt numbers issued by กองคลัง (unique per fiscal year + book + number). */
+  async recordReceipts(id: string, dto: RecordReceiptsDto, user: AuthUser, meta: RequestMeta) {
+    const b = await this.load(id, user, 'receipt:create');
+    if (b.status !== 'RECEIVED') throw Errors.invalidState('บันทึกเลขที่ใบเสร็จได้เมื่อกองคลังรับชุดนำส่งแล้วเท่านั้น');
+    const seen = new Set<string>();
+    for (const r of dto.receipts) {
+      if (seen.has(r.paymentId)) throw Errors.validation('มีรายการซ้ำในคำขอ');
+      seen.add(r.paymentId);
+    }
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM finance_batches WHERE id = ${b.id}::uuid FOR UPDATE`;
+        const items = await tx.financeBatchItem.findMany({ where: { batchId: b.id, isActive: true }, include: { payment: { include: { receipts: { where: { status: { not: 'VOIDED' } } } } } } });
+        const byPayment = new Map(items.map((i) => [i.paymentId, i]));
+        for (const r of dto.receipts) {
+          const item = byPayment.get(r.paymentId);
+          if (!item) throw Errors.validation(`รายการ ${r.paymentId} ไม่อยู่ในชุดนำส่งนี้`);
+          if (item.payment.receipts.length) throw Errors.conflict('RECEIPT_EXISTS', `รายการ ${item.payment.paymentNo} มีเลขที่ใบเสร็จแล้ว`);
+          const issuedAt = new Date(r.issuedAt);
+          await tx.receiptRecord.create({
+            data: {
+              paymentId: r.paymentId,
+              batchId: b.id,
+              fiscalYear: fiscalYearBE(issuedAt),
+              bookNo: r.bookNo.trim(),
+              receiptNo: r.receiptNo.trim(),
+              issuedAt,
+              amount: item.amount,
+              recordedById: user.id,
+            },
+          });
+        }
+        const recorded = await tx.receiptRecord.count({ where: { batchId: b.id, status: { not: 'VOIDED' } } });
+        const complete = recorded >= items.length;
+        if (complete) {
+          await tx.financeBatch.update({ where: { id: b.id }, data: { status: 'RECEIPTS_ISSUED', version: { increment: 1 } } });
+        }
+        await this.audit.log(
+          { actorId: user.id, action: 'receipt.record', entityType: 'finance_batch', entityId: b.id, after: { receipts: dto.receipts.map((r) => `${r.bookNo}/${r.receiptNo}`), complete }, meta },
+          tx,
+        );
+        return { recorded: dto.receipts.length, complete };
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new AppError('RECEIPT_NO_TAKEN', 'เลขที่ใบเสร็จนี้ (ปีงบประมาณ/เล่มที่/เลขที่) ถูกใช้แล้ว', HttpStatus.CONFLICT);
+      }
+      throw e;
+    }
+  }
+
+  /** รายงานนำส่งเงิน (Excel). PDF with the official form comes with FIN-1 templates (P2b). */
+  async export(id: string, user: AuthUser, meta: RequestMeta) {
+    const b = await this.load(id, user, 'finance_batch:export');
+    const d = await this.detail(id, user);
+    const items = d.items.filter((i) => i.isActive || b.status === 'RETURNED');
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'SRU Event Hub';
+    const ws = wb.addWorksheet('รายงานนำส่ง', { pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
+    const font = { name: 'TH Sarabun New', size: 14 };
+    const head = (text: string, bold = false) => {
+      const row = ws.addRow([text]);
+      row.font = { ...font, bold, size: bold ? 16 : 14 };
+      ws.mergeCells(row.number, 1, row.number, 9);
+      row.alignment = { horizontal: bold ? 'center' : 'left' };
+    };
+    head('รายงานการนำส่งเงินรายได้ค่าลงทะเบียนกิจกรรม', true);
+    head(`มหาวิทยาลัยราชภัฏสุราษฎร์ธานี — ${b.organization.nameTh}`, true);
+    head(`เลขที่ชุดนำส่ง: ${b.batchNo}    สถานะ: ${b.status}`);
+    head(`กิจกรรม: ${b.event.code} ${b.event.titleTh}    วันที่จัด: ${formatThaiDate(b.event.startAt, 'long')}`);
+    head(`จัดทำโดย: ${b.createdBy.displayName}    วันที่จัดทำ: ${formatThaiDateTime(b.createdAt)}`);
+    ws.addRow([]);
+    const header = ws.addRow(['ลำดับ', 'เลขที่รายการชำระ', 'เลขที่ใบแจ้งชำระ', 'เลขอ้างอิงการลงทะเบียน', 'ชื่อผู้ชำระ', 'วันที่โอน', 'วันที่ตรวจสอบ', 'จำนวนเงิน (บาท)', 'เล่มที่/เลขที่ใบเสร็จ']);
+    header.font = { ...font, bold: true };
+    header.eachCell((c) => {
+      c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+      c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    });
+    items.forEach((i, idx) => {
+      const row = ws.addRow(
+        [
+          idx + 1,
+          i.paymentNo,
+          i.orderNo,
+          i.referenceNo ?? '',
+          i.payerName,
+          i.transferredAt ? formatThaiDateTime(i.transferredAt) : '',
+          i.verifiedAt ? formatThaiDateTime(i.verifiedAt) : '',
+          Number(i.amount),
+          i.receipt ? `${i.receipt.bookNo}/${i.receipt.receiptNo}` : '',
+        ].map((v) => (typeof v === 'string' ? sanitizeSpreadsheetCell(v) : v)),
+      );
+      row.font = font;
+      row.getCell(8).numFmt = '#,##0.00';
+      row.eachCell((c) => (c.border = { left: { style: 'thin' }, right: { style: 'thin' }, bottom: { style: 'hair' } }));
+    });
+    const totalRow = ws.addRow(['', '', '', '', '', '', 'รวมทั้งสิ้น', Number(d.totalAmount), '']);
+    totalRow.font = { ...font, bold: true };
+    totalRow.getCell(8).numFmt = '#,##0.00';
+    head(`(${d.totalAmountText})`);
+    ws.addRow([]);
+    head('ลงชื่อ ........................................ ผู้นำส่ง          ลงชื่อ ........................................ ผู้รับเงิน (กองคลัง)');
+    [6, 18, 18, 20, 30, 18, 18, 16, 20].forEach((w, i) => (ws.getColumn(i + 1).width = w));
+
+    await this.audit.log({ actorId: user.id, action: 'finance_batch.export', entityType: 'finance_batch', entityId: id, after: { format: 'xlsx' }, meta });
+    return new StreamableFile(Buffer.from(await wb.xlsx.writeBuffer()), {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="${b.batchNo}.xlsx"`,
+    });
+  }
+
+  // ───────────── helpers ─────────────
+
+  private async event(id: string) {
+    const e = await this.prisma.event.findFirst({ where: { id, deletedAt: null } });
+    if (!e) throw Errors.notFound('กิจกรรม');
+    return e;
+  }
+
+  private async load(id: string, user: AuthUser, perm: 'finance_batch:view' | 'finance_batch:submit' | 'finance_batch:receive' | 'finance_batch:export' | 'receipt:create') {
+    const b = await this.prisma.financeBatch.findUnique({ where: { id }, include: batchInclude });
+    if (!b) throw Errors.notFound('ชุดนำส่ง');
+    await this.access.assertOrg(user, perm, b.organizationId);
+    return b;
+  }
+
+  private assertNotPreparer(b: { createdById: string; submittedById: string | null }, user: AuthUser) {
+    if (b.createdById === user.id || b.submittedById === user.id) {
+      throw Errors.forbidden('ผู้รับชุดนำส่งต้องไม่ใช่ผู้จัดทำหรือผู้ส่ง (การแบ่งแยกหน้าที่)');
+    }
+  }
+
+  private async transition(
+    id: string,
+    from: BatchRow['status'],
+    to: BatchRow['status'],
+    user: AuthUser,
+    meta: RequestMeta,
+    data: Prisma.FinanceBatchUncheckedUpdateManyInput,
+    reason?: string,
+    extra?: (tx: Tx) => Promise<void>,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const res = await tx.financeBatch.updateMany({ where: { id, status: from }, data: { ...data, status: to, version: { increment: 1 } } });
+      if (res.count !== 1) throw Errors.invalidState(`ชุดนำส่งต้องอยู่ในสถานะ ${from}`);
+      if (extra) await extra(tx);
+      await this.audit.log({ actorId: user.id, action: `finance_batch.${to.toLowerCase()}`, entityType: 'finance_batch', entityId: id, before: { status: from }, after: { status: to }, reason, meta }, tx);
+      return { id, status: to };
+    });
+  }
+
+  private dto(b: BatchRow): FinanceBatchDto {
+    const total = moneyOut(b.totalAmount)!;
+    return {
+      id: b.id,
+      batchNo: b.batchNo,
+      status: b.status,
+      eventId: b.event.id,
+      eventCode: b.event.code,
+      eventTitle: b.event.titleTh,
+      organizationId: b.organization.id,
+      organizationName: b.organization.nameTh,
+      totalAmount: total,
+      totalAmountText: bahtText(total),
+      itemCount: b.itemCount,
+      receiptCount: b._count.receipts,
+      note: b.note,
+      createdByName: b.createdBy.displayName,
+      createdAt: b.createdAt.toISOString(),
+      submittedAt: b.submittedAt?.toISOString() ?? null,
+      receivedAt: b.receivedAt?.toISOString() ?? null,
+      receivedByName: b.receivedBy?.displayName ?? null,
+      returnedAt: b.returnedAt?.toISOString() ?? null,
+      returnReason: b.returnReason,
+    };
+  }
+}

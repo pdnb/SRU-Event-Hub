@@ -8,14 +8,14 @@
 | §3 Monorepo | P1 | ✅ |
 | §4.1 Auth & Users | P1 | ✅ `apps/api/src/auth`, `users` (การสมัครเองของผู้ประสานงาน + ยืนยันอีเมล → P3) |
 | §4.2 Organizations | P1 | ✅ tree, หัวหน้า, สมาชิกตามบทบาท (PROPOSER/APPROVER/FINANCE_OFFICER) |
-| §4.3 Events | P1 | ✅ ยกเว้นอัปโหลดรูป/ไฟล์ (P2 พร้อม storage service), ค่าลงทะเบียน (P2), ตั้งค่ากลุ่ม (P3) |
+| §4.3 Events | P1 | ✅ ยกเว้นอัปโหลดรูป/ไฟล์ (P2 พร้อม storage service), ค่าลงทะเบียน ✅ P2a, ตั้งค่ากลุ่ม (P3) |
 | §4.4 Approval | P1 | ✅ กำหนดขั้นเอง, สายบังคับบัญชา, ขั้นตรวจการเงิน, ประวัติ append-only; UI แก้ workflow → P5 (ปัจจุบันตั้งผ่าน seed/DB) |
-| §4.5 Portal | P1 | ✅ หน้าแรก, ทั้งหมด/เปิดรับ/กำลังจัด/ย้อนหลัง, ปฏิทิน, รายละเอียด, ลงทะเบียน, ตรวจสถานะ, ค้นหา/กรอง, แนะนำ, แชร์ — หน้าชำระเงิน (P2), กลุ่ม (P3) |
+| §4.5 Portal | P1 | ✅ หน้าแรก, ทั้งหมด/เปิดรับ/กำลังจัด/ย้อนหลัง, ปฏิทิน, รายละเอียด, ลงทะเบียน, ตรวจสถานะ, ค้นหา/กรอง, แนะนำ, แชร์ — หน้าชำระเงิน ✅ P2a, กลุ่ม (P3) |
 | §4.6 Registration | P1 | ✅ รายบุคคล, guest, ป้องกันซ้ำ, จำกัดที่นั่ง atomic, waitlist, idempotency, export — §4.6.1 กลุ่ม → P3 |
-| §4.7 Payment & Finance | P2 | utility พร้อม, ดู [PAYMENT.md](PAYMENT.md) |
+| §4.7 Payment & Finance | P2a ✅ / P2b | `apps/api/src/payments` — ดู [PAYMENT.md](PAYMENT.md) (หน้างาน/คืนเงิน/PDF → P2b) |
 | §4.8 QR/Check-in, §4.8.1 Badges, §4.9 Attendance | P4 | |
 | §4.10 Certificates, §4.11 Evaluation | P5 | |
-| §4.12 Notifications | P2–P5 | ตารางพร้อม, BullMQ worker ใน P2 |
+| §4.12 Notifications | P2b–P5 | ตารางพร้อม, โครง BullMQ พร้อม (ใช้กับหมดเวลาชำระแล้ว) |
 | §4.13 Venues | P1 schema / P5 UI | ✅ ตาราง + exclusion constraint กันจองซ้อน |
 | §4.14 Dashboard | P1 พื้นฐาน / P5 ตามบทบาท | |
 | §5 RBAC | P1 | ✅ 15 บทบาท, permission ระดับ action รวม finance actions, data scope, SoD |
@@ -25,4 +25,4 @@
 | §9 Security | P1 | ✅ ดู [SECURITY.md](SECURITY.md) |
 | §10 Performance | P1 บางส่วน | row lock ต่อกิจกรรม, index, pagination; Redis cache/queue → P2 |
 | §11 Workflow | P1 | ✅ กิจกรรม + อนุมัติ + ลงทะเบียน ([WORKFLOW.md](WORKFLOW.md)) |
-| §12 Seed | P1 | ✅ มหาวิทยาลัย คณะ/สำนัก/กองคลัง, บัญชีทุกบทบาท, ประเภท/หมวด/ประเภทผู้เข้าร่วม, สถานที่, workflow, กิจกรรมตัวอย่าง — บัญชีรับเงิน/รหัสรายได้ → P2 |
+| §12 Seed | P1 | ✅ มหาวิทยาลัย คณะ/สำนัก/กองคลัง, บัญชีทุกบทบาท, ประเภท/หมวด/ประเภทผู้เข้าร่วม, สถานที่, workflow, กิจกรรมตัวอย่าง — บัญชีรับเงิน/รหัสรายได้ ✅ (ค่าตัวอย่าง) |

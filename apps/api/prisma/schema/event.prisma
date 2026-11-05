@@ -60,8 +60,8 @@ model EventCategory {
 }
 
 model Tag {
-  id   String     @id @default(uuid(7)) @db.Uuid
-  name String     @unique @db.VarChar(100)
+  id   String @id @default(uuid(7)) @db.Uuid
+  name String @unique @db.VarChar(100)
 
   events EventTag[]
 
@@ -82,14 +82,15 @@ model EventTag {
 
 /// นักศึกษา / บุคลากร / บุคคลภายนอก … (configurable)
 model ParticipantType {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  code      String   @unique @db.VarChar(50)
-  nameTh    String   @map("name_th") @db.VarChar(200)
-  isActive  Boolean  @default(true) @map("is_active")
-  sortOrder Int      @default(0) @map("sort_order")
+  id        String  @id @default(uuid(7)) @db.Uuid
+  code      String  @unique @db.VarChar(50)
+  nameTh    String  @map("name_th") @db.VarChar(200)
+  isActive  Boolean @default(true) @map("is_active")
+  sortOrder Int     @default(0) @map("sort_order")
 
   events        EventParticipantType[]
   registrations Registration[]
+  feeRates      EventFeeRate[]
 
   @@map("participant_types")
 }
@@ -120,6 +121,10 @@ model Event {
   seatsTaken             Int            @default(0) @map("seats_taken")
   budget                 Decimal?       @db.Decimal(12, 2)
   isPaid                 Boolean        @default(false) @map("is_paid")
+  /// Hours a PENDING_PAYMENT seat is held before the order expires (capped at the event start).
+  paymentWindowHours     Int            @default(72) @map("payment_window_hours")
+  bankAccountId          String?        @map("bank_account_id") @db.Uuid
+  incomeCodeId           String?        @map("income_code_id") @db.Uuid
   allowGuestRegistration Boolean        @default(false) @map("allow_guest_registration")
   allowWaitlist          Boolean        @default(true) @map("allow_waitlist")
   allowSelfCancel        Boolean        @default(true) @map("allow_self_cancel")
@@ -138,26 +143,31 @@ model Event {
   updatedById            String?        @map("updated_by_id") @db.Uuid
   deletedAt              DateTime?      @map("deleted_at") @db.Timestamptz(6)
 
-  eventType        EventType?             @relation(fields: [eventTypeId], references: [id], onDelete: Restrict)
-  category         EventCategory?         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  owner            User                   @relation("EventOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
-  createdBy        User                   @relation("EventCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  venue            Venue?                 @relation(fields: [venueId], references: [id], onDelete: SetNull)
-  coverImage       File?                  @relation("EventCover", fields: [coverImageFileId], references: [id], onDelete: SetNull)
-  tags             EventTag[]
-  images           EventImage[]
-  files            EventFile[]
-  schedules        EventSchedule[]
-  organizers       EventOrganizer[]
-  participantTypes EventParticipantType[]
-  statusHistory    EventStatusHistory[]
-  approvalRequests ApprovalRequest[]
+  eventType          EventType?             @relation(fields: [eventTypeId], references: [id], onDelete: Restrict)
+  category           EventCategory?         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  organization       Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  owner              User                   @relation("EventOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  createdBy          User                   @relation("EventCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  venue              Venue?                 @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  bankAccount        BankAccount?           @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  incomeCode         IncomeCode?            @relation(fields: [incomeCodeId], references: [id], onDelete: Restrict)
+  feeRates           EventFeeRate[]
+  paymentOrders      PaymentOrder[]
+  financeBatches     FinanceBatch[]
+  coverImage         File?                  @relation("EventCover", fields: [coverImageFileId], references: [id], onDelete: SetNull)
+  tags               EventTag[]
+  images             EventImage[]
+  files              EventFile[]
+  schedules          EventSchedule[]
+  organizers         EventOrganizer[]
+  participantTypes   EventParticipantType[]
+  statusHistory      EventStatusHistory[]
+  approvalRequests   ApprovalRequest[]
   registrationFields RegistrationField[]
-  registrations    Registration[]
-  waitingList      WaitingList[]
-  venueBookings    VenueBooking[]
-  resourceBookings ResourceBooking[]
+  registrations      Registration[]
+  waitingList        WaitingList[]
+  venueBookings      VenueBooking[]
+  resourceBookings   ResourceBooking[]
 
   @@index([organizationId, status])
   @@index([status, startAt])
@@ -193,12 +203,12 @@ model EventImage {
 }
 
 model EventFile {
-  id        String @id @default(uuid(7)) @db.Uuid
-  eventId   String @map("event_id") @db.Uuid
-  fileId    String @map("file_id") @db.Uuid
-  title     String @db.VarChar(300)
+  id        String  @id @default(uuid(7)) @db.Uuid
+  eventId   String  @map("event_id") @db.Uuid
+  fileId    String  @map("file_id") @db.Uuid
+  title     String  @db.VarChar(300)
   isPublic  Boolean @default(true) @map("is_public")
-  sortOrder Int    @default(0) @map("sort_order")
+  sortOrder Int     @default(0) @map("sort_order")
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
   file  File  @relation("EventAttachment", fields: [fileId], references: [id], onDelete: Restrict)

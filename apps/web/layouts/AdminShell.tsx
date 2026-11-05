@@ -53,8 +53,18 @@ const MENU: Item[] = [
       { key: 'groups', label: 'กลุ่ม / องค์กร', icon: null, phase: 'P3' },
     ],
   },
-  { key: 'payments', label: 'การชำระเงิน', icon: <DollarOutlined />, phase: 'P2' },
-  { key: 'finance', label: 'นำส่งกองคลัง', icon: <BankOutlined />, phase: 'P2' },
+  { key: '/admin/finance/payments', label: 'การชำระเงิน', icon: <DollarOutlined />, perm: 'payment:view' },
+  {
+    key: 'finance',
+    label: 'การเงิน / กองคลัง',
+    icon: <BankOutlined />,
+    children: [
+      { key: '/admin/finance/batches', label: 'ชุดนำส่งกองคลัง', icon: null, perm: 'finance_batch:view' },
+      { key: '/admin/finance/settings', label: 'บัญชีรับเงิน / รหัสรายได้', icon: null, perm: 'bank_account:view' },
+      { key: 'cashier', label: 'รับชำระหน้างาน', icon: null, phase: 'P2b' },
+      { key: 'refunds', label: 'คืนเงิน', icon: null, phase: 'P2b' },
+    ],
+  },
   { key: 'checkin', label: 'ตรวจสอบการเข้าร่วม', icon: <QrcodeOutlined />, phase: 'P4' },
   { key: 'badges', label: 'ป้ายชื่อ', icon: <IdcardOutlined />, phase: 'P4' },
   { key: 'certificates', label: 'เกียรติบัตร', icon: <SafetyCertificateOutlined />, phase: 'P5' },
@@ -63,13 +73,13 @@ const MENU: Item[] = [
   { key: 'reports', label: 'รายงาน', icon: <BarChartOutlined />, phase: 'P5' },
   { key: '/admin/organizations', label: 'จัดการหน่วยงาน', icon: <ClusterOutlined />, perm: 'organization:view' },
   { key: '/admin/users', label: 'จัดการผู้ใช้งาน', icon: <TeamOutlined />, perm: 'user:view' },
-  { key: 'audit', label: 'Audit Log', icon: <AuditOutlined />, phase: 'P2', perm: 'audit_log:view' },
-  { key: 'settings', label: 'ตั้งค่าระบบ', icon: <SettingOutlined />, phase: 'P2', perm: 'system_setting:view' },
+  { key: 'audit', label: 'Audit Log', icon: <AuditOutlined />, phase: 'P2b', perm: 'audit_log:view' },
+  { key: 'settings', label: 'ตั้งค่าระบบ', icon: <SettingOutlined />, phase: 'P2b', perm: 'system_setting:view' },
 ];
 
 function toMenuItems(items: Item[], can: (p: PermissionCode) => boolean): MenuProps['items'] {
   return items
-    .filter((i) => !i.perm || can(i.perm))
+    .filter((i) => (!i.perm || can(i.perm)) && (!i.children || i.children.some((c) => c.perm && can(c.perm))))
     .map((i) =>
       i.children
         ? { key: i.key, icon: i.icon, label: i.label, children: toMenuItems(i.children, can) }

@@ -10,6 +10,7 @@ import { RhfField } from '@/components/form/RhfField';
 import { api } from '@/services/api';
 import dayjs, { DATETIME_FMT } from '@/services/dayjs';
 import { eventFormSchema, OPTION_TYPES, type EventFormValues } from './event-form-schema';
+import { FeeRatesEditor } from './FeeRatesEditor';
 
 const FIELD_TYPES = [
   { value: 'TEXT', label: 'ข้อความสั้น' },
@@ -59,6 +60,8 @@ export function EventForm({
       participantTypeIds: [],
       tags: [],
       registrationFields: [],
+      feeRates: [],
+      paymentWindowHours: 72,
       ...defaultValues,
     },
   });
@@ -195,8 +198,9 @@ export function EventForm({
             </Col>
           ))}
         </Row>
-        <Alert type="info" showIcon title="ค่าลงทะเบียนและการชำระเงิน" description="การตั้งค่าค่าลงทะเบียน (อัตราตามประเภทผู้เข้าร่วม บัญชีรับเงิน รหัสรายได้) จะเปิดใช้ในระยะที่ 2" />
       </Card>
+
+      <FeeRatesEditor control={control} participantTypes={lookups.data?.participantTypes ?? []} disabled={L} />
 
       <Card
         title="คำถามเพิ่มเติมในแบบลงทะเบียน"

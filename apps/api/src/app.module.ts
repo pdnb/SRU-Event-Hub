@@ -16,6 +16,7 @@ import { EventsModule } from './events/events.module';
 import { HealthController } from './health/health.controller';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { PaymentsModule } from './payments/payments.module';
 import { RegistrationsModule } from './registrations/registrations.module';
 import { UsersModule } from './users/users.module';
 
@@ -54,6 +55,7 @@ import { UsersModule } from './users/users.module';
     CategoriesModule,
     EventsModule,
     RegistrationsModule,
+    PaymentsModule,
   ],
   controllers: [HealthController],
   providers: [

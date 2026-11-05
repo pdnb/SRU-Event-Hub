@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { ApiError } from '@sru/api-client';
 import { ThaiDateRange, ThaiDate } from '@/components/Format';
 import { StatusTag } from '@/components/StatusTag';
+import { PaymentPanel } from '@/features/payment/PaymentPanel';
 import { api } from '@/services/api';
 
 /** Token is read from the URL fragment (#ref=…&token=…), which browsers never send to servers. */
@@ -83,6 +84,15 @@ export function RegistrationStatusLookup() {
               <ThaiDate value={r.createdAt} time />
             </Descriptions.Item>
           </Descriptions>
+          {active && r.payment && creds && (
+            <div style={{ marginTop: 16 }}>
+              <PaymentPanel
+                order={r.payment}
+                upload={(file, transferredAt) => api.public.uploadSlip(creds.referenceNo, creds.token, file, { transferredAt })}
+                onChanged={() => lookup.mutate(creds)}
+              />
+            </div>
+          )}
           {active && r.event.allowSelfCancel && (
             <Popconfirm title="ยืนยันการยกเลิกการลงทะเบียน?" description="เมื่อยกเลิกแล้ว ที่นั่งจะถูกส่งต่อให้ผู้อยู่ในรายชื่อสำรอง" okText="ยกเลิกการลงทะเบียน" cancelText="ไม่ใช่" okButtonProps={{ danger: true }} onConfirm={() => cancel.mutate()}>
               <Button danger style={{ marginTop: 16 }} loading={cancel.isPending}>

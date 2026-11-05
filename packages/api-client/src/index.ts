@@ -6,6 +6,7 @@ import type {
   EventSummaryDto,
   OrganizationDto,
   PageMeta,
+  PaymentDto,
   RegistrationDto,
 } from '@sru/shared-types';
 
@@ -132,8 +133,23 @@ export function createApiClient(opts: ClientOptions) {
         ),
       cancel: (referenceNo: string, token: string, reason?: string) =>
         data<{ cancelled: boolean }>(http.post('/public/registrations/cancel', { referenceNo, token, reason })),
+      /** Guest slip upload (multipart). The token authorises the request. */
+      uploadSlip: (referenceNo: string, token: string, file: Blob, opts: { transferredAt?: string; note?: string } = {}) =>
+        data<PaymentDto>(http.post('/public/registrations/slip', slipForm(file, { referenceNo, token, ...opts }))),
+    },
+    payments: {
+      /** Signed-in registrant uploads a slip for their own registration. */
+      uploadSlip: (registrationId: string, file: Blob, opts: { transferredAt?: string; note?: string } = {}) =>
+        data<PaymentDto>(http.post(`/registrations/${registrationId}/slip`, slipForm(file, opts))),
     },
   };
+}
+
+function slipForm(file: Blob, fields: Record<string, string | undefined>): FormData {
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(fields)) if (v) fd.append(k, v);
+  fd.append('file', file);
+  return fd;
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>;

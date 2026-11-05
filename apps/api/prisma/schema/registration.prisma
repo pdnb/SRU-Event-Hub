@@ -101,6 +101,7 @@ model Registration {
   participantType ParticipantType      @relation(fields: [participantTypeId], references: [id], onDelete: Restrict)
   answers         RegistrationAnswer[]
   waitingList     WaitingList?
+  paymentOrders   PaymentOrder[]
 
   @@index([eventId, status])
   @@index([eventId, createdAt])

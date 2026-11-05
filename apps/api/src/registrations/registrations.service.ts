@@ -14,6 +14,8 @@ import { isRegistrationOpen } from '../events/event-state';
 import { EventsService } from '../events/events.service';
 import { Prisma, Registration, RegistrationStatus } from '../generated/prisma/client';
 import { PrismaService, Tx } from '../prisma/prisma.service';
+import { selectFeeRate } from '../payments/fee';
+import { PaymentsService } from '../payments/payments.service';
 import {
   AnswerDto,
   CreateRegistrationDto,
@@ -24,6 +26,10 @@ import {
 export const CONSENT_VERSION = '2569-1';
 const SEAT_HOLDING: RegistrationStatus[] = ['PENDING_PAYMENT', 'CONFIRMED'];
 const ACTIVE: RegistrationStatus[] = ['PENDING_PAYMENT', 'CONFIRMED', 'WAITLISTED'];
+interface Promotion {
+  promoted: string[];
+  orders: { id: string; dueAt: Date }[];
+}
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
 interface LockedEvent {
@@ -35,6 +41,10 @@ interface LockedEvent {
   allow_guest_registration: boolean;
   allow_self_cancel: boolean;
   is_paid: boolean;
+  start_at: Date;
+  payment_window_hours: number;
+  bank_account_id: string | null;
+  income_code_id: string | null;
   registration_open_at: Date | null;
   registration_close_at: Date | null;
   end_at: Date;
@@ -51,6 +61,7 @@ export class RegistrationsService {
     private readonly audit: AuditService,
     private readonly seq: SequenceService,
     private readonly events: EventsService,
+    private readonly payments: PaymentsService,
   ) {}
 
   /**
@@ -78,7 +89,8 @@ export class RegistrationsService {
         async (tx) => {
           const [ev] = await tx.$queryRaw<LockedEvent[]>`
             SELECT id::text, status::text, capacity, seats_taken, allow_waitlist, allow_guest_registration,
-                   allow_self_cancel, is_paid, registration_open_at, registration_close_at, end_at, deleted_at
+                   allow_self_cancel, is_paid, start_at, payment_window_hours, bank_account_id::text, income_code_id::text,
+                   registration_open_at, registration_close_at, end_at, deleted_at
             FROM events WHERE id = ${eventId}::uuid FOR UPDATE`;
           if (!ev || ev.deleted_at) throw Errors.notFound('กิจกรรม');
           if (
@@ -94,17 +106,17 @@ export class RegistrationsService {
           if (!user && !ev.allow_guest_registration) {
             throw new AppError('LOGIN_REQUIRED', 'กิจกรรมนี้ต้องเข้าสู่ระบบก่อนลงทะเบียน', HttpStatus.UNAUTHORIZED);
           }
-          if (ev.is_paid) {
-            // Payment orders, transfers and on-site payment arrive with the payment module (Phase 2).
-            throw new AppError('PAID_REGISTRATION_UNAVAILABLE', 'ยังไม่เปิดให้ลงทะเบียนกิจกรรมที่มีค่าใช้จ่ายผ่านระบบ', HttpStatus.CONFLICT);
-          }
+          const now = new Date();
+          // Fee snapshot is taken now (backend-computed, spec §4.7). null = nothing to pay.
+          const fee = ev.is_paid ? await this.payments.resolveFee(tx, eventId, participantType.id, now) : null;
 
           const seats = 1;
           const hasSeat = ev.capacity === null || ev.seats_taken + seats <= ev.capacity;
           if (!hasSeat && !ev.allow_waitlist) {
             throw new AppError('EVENT_FULL', 'ที่นั่งเต็มแล้ว', HttpStatus.CONFLICT);
           }
-          const status: RegistrationStatus = hasSeat ? 'CONFIRMED' : 'WAITLISTED';
+          // A paid seat is held as PENDING_PAYMENT until the order is paid, waived or expires.
+          const status: RegistrationStatus = !hasSeat ? 'WAITLISTED' : fee ? 'PENDING_PAYMENT' : 'CONFIRMED';
           if (hasSeat) {
             await tx.$executeRaw`UPDATE events SET seats_taken = seats_taken + ${seats} WHERE id = ${eventId}::uuid`;
           }
@@ -130,7 +142,7 @@ export class RegistrationsService {
               seats,
               consentAt: new Date(),
               consentVersion: CONSENT_VERSION,
-              confirmedAt: status === 'CONFIRMED' ? new Date() : null,
+              confirmedAt: status === 'CONFIRMED' ? now : null,
               accessTokenHash: sha256(accessToken),
               createdById: user?.id ?? null,
               answers: { create: answers },
@@ -139,17 +151,24 @@ export class RegistrationsService {
           if (status === 'WAITLISTED') {
             await tx.waitingList.create({ data: { eventId, registrationId: reg.id } });
           }
+          let order: { id: string; dueAt: Date } | null = null;
+          if (status === 'PENDING_PAYMENT' && fee) {
+            order = await this.payments.createOrder(tx, reg, fee, this.eventForOrder(ev), now);
+            await tx.registration.update({ where: { id: reg.id }, data: { paymentDueAt: order.dueAt } });
+          }
           await this.audit.log(
             { actorId: user?.id, action: 'registration.create', entityType: 'registration', entityId: reg.id, after: { referenceNo, status, eventId }, meta },
             tx,
           );
-          return reg;
+          return { reg, order };
         },
         { timeout: 10_000 },
       );
-      const waitlistPosition = result.status === 'WAITLISTED' ? await this.waitlistPosition(result.id) : null;
+      if (result.order) this.payments.scheduleExpiry(result.order);
+      const waitlistPosition = result.reg.status === 'WAITLISTED' ? await this.waitlistPosition(result.reg.id) : null;
+      const payment = result.order ? await this.payments.orderForRegistration(result.reg.id) : null;
       // The access token is returned exactly once; only its hash is stored.
-      return { ...this.toDto(result, dto.participantTypeCode, waitlistPosition), accessToken };
+      return { ...this.toDto(result.reg, dto.participantTypeCode, waitlistPosition), payment, accessToken };
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new AppError('DUPLICATE_REGISTRATION', 'อีเมลนี้ลงทะเบียนกิจกรรมนี้ไว้แล้ว', HttpStatus.CONFLICT);
@@ -179,7 +198,7 @@ export class RegistrationsService {
 
   /** Cancels, releases the seat and promotes from the waitlist — all in one transaction. */
   private async cancel(id: string, reason: string | undefined, actorId: string | null, meta: RequestMeta) {
-    const promoted = await this.prisma.$transaction(async (tx) => {
+    const { promoted, orders } = await this.prisma.$transaction(async (tx) => {
       const [reg] = await tx.$queryRaw<{ id: string; event_id: string; status: RegistrationStatus; seats: number }[]>`
         SELECT id::text, event_id::text, status, seats FROM registrations WHERE id = ${id}::uuid FOR UPDATE`;
       if (!reg) throw Errors.notFound('การลงทะเบียน');
@@ -192,46 +211,137 @@ export class RegistrationsService {
         data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: reason ?? null, version: { increment: 1 } },
       });
       await tx.waitingList.deleteMany({ where: { registrationId: id } });
+      await this.payments.closeOrdersForCancelledRegistration(tx, id, reason ?? 'ยกเลิกการลงทะเบียน', actorId);
 
-      let promotedIds: string[] = [];
+      let promotion: Promotion = { promoted: [], orders: [] };
       if (SEAT_HOLDING.includes(reg.status)) {
         await tx.$executeRaw`UPDATE events SET seats_taken = seats_taken - ${reg.seats} WHERE id = ${reg.event_id}::uuid`;
-        promotedIds = await this.promoteWaitlist(tx, reg.event_id);
+        promotion = await this.promoteWaitlist(tx, reg.event_id);
       }
+      const promotedIds = promotion.promoted;
       await this.audit.log(
         { actorId, action: 'registration.cancel', entityType: 'registration', entityId: id, before: { status: reg.status }, after: { status: 'CANCELLED', promoted: promotedIds }, reason, meta },
         tx,
       );
-      return promotedIds;
+      return promotion;
     });
+    orders.forEach((o) => this.payments.scheduleExpiry(o));
     if (promoted.length) this.logger.log({ promoted }, 'Promoted from waitlist');
     // Phase 2: enqueue "ได้รับสิทธิ์จากรายชื่อสำรอง" notifications via BullMQ.
     return { cancelled: true, promotedFromWaitlist: promoted.length };
   }
 
-  /** FIFO promotion while seats are available. Caller must hold the event row lock. */
-  private async promoteWaitlist(tx: Tx, eventId: string): Promise<string[]> {
-    const promoted: string[] = [];
+  /**
+   * FIFO promotion while seats are available. Caller must hold the event row lock.
+   * On paid events the promoted registrant gets PENDING_PAYMENT and a fresh payment order
+   * (fee at promotion time; falls back to the rate valid when they joined the waitlist).
+   */
+  private async promoteWaitlist(tx: Tx, eventId: string): Promise<Promotion> {
+    const out: Promotion = { promoted: [], orders: [] };
+    const [meta] = await tx.$queryRaw<Pick<LockedEvent, 'is_paid' | 'start_at' | 'payment_window_hours' | 'bank_account_id' | 'income_code_id'>[]>`
+      SELECT is_paid, start_at, payment_window_hours, bank_account_id::text, income_code_id::text
+      FROM events WHERE id = ${eventId}::uuid`;
+    const rates = meta?.is_paid ? await tx.eventFeeRate.findMany({ where: { eventId, isActive: true } }) : [];
     for (;;) {
       const [ev] = await tx.$queryRaw<{ capacity: number | null; seats_taken: number }[]>`
         SELECT capacity, seats_taken FROM events WHERE id = ${eventId}::uuid`;
       const next = await tx.waitingList.findFirst({
         where: { eventId, promotedAt: null, registration: { status: 'WAITLISTED' } },
         orderBy: { createdAt: 'asc' },
-        include: { registration: { select: { seats: true } } },
+        include: { registration: true },
       });
-      if (!ev || !next) break;
+      if (!ev || !next || !meta) break;
       if (ev.capacity !== null && ev.seats_taken + next.registration.seats > ev.capacity) break;
 
-      await tx.$executeRaw`UPDATE events SET seats_taken = seats_taken + ${next.registration.seats} WHERE id = ${eventId}::uuid`;
-      await tx.registration.update({
-        where: { id: next.registrationId },
-        data: { status: 'CONFIRMED', confirmedAt: new Date(), version: { increment: 1 } },
-      });
-      await tx.waitingList.update({ where: { id: next.id }, data: { promotedAt: new Date() } });
-      promoted.push(next.registrationId);
+      const now = new Date();
+      const reg = next.registration;
+      const fee = meta.is_paid
+        ? (selectFeeRate(rates, reg.participantTypeId, now) ?? selectFeeRate(rates, reg.participantTypeId, reg.createdAt))
+        : null;
+      if (meta.is_paid && !fee) {
+        this.logger.warn({ eventId, registrationId: reg.id }, 'No fee rate for waitlist promotion – left on waitlist');
+        break;
+      }
+
+      await tx.$executeRaw`UPDATE events SET seats_taken = seats_taken + ${reg.seats} WHERE id = ${eventId}::uuid`;
+      await tx.waitingList.update({ where: { id: next.id }, data: { promotedAt: now } });
+      if (fee && !fee.amount.isZero()) {
+        const order = await this.payments.createOrder(tx, reg, fee, this.eventForOrder(meta), now);
+        await tx.registration.update({
+          where: { id: reg.id },
+          data: { status: 'PENDING_PAYMENT', paymentDueAt: order.dueAt, version: { increment: 1 } },
+        });
+        out.orders.push(order);
+      } else {
+        await tx.registration.update({ where: { id: reg.id }, data: { status: 'CONFIRMED', confirmedAt: now, version: { increment: 1 } } });
+      }
+      out.promoted.push(reg.id);
     }
-    return promoted;
+    return out;
+  }
+
+  // ───────────── Payment expiry (driven by BullMQ jobs + sweeper) ─────────────
+
+  /** Expires every overdue unpaid order. Returns the number expired. Safe to run concurrently. */
+  async expireOverdue(now = new Date(), limit = 200): Promise<number> {
+    const due = await this.prisma.paymentOrder.findMany({
+      where: { status: 'UNPAID', dueAt: { lte: now } },
+      select: { id: true },
+      orderBy: { dueAt: 'asc' },
+      take: limit,
+    });
+    let n = 0;
+    for (const o of due) if (await this.expireOrder(o.id, now)) n++;
+    return n;
+  }
+
+  /**
+   * Expires one order if it is still UNPAID and past due: order → EXPIRED, registration → EXPIRED,
+   * seat released, waitlist promoted. A slip submitted before the due time (PENDING_VERIFICATION)
+   * is never expired here – the order row lock makes "slip arrives at the deadline" race-free.
+   */
+  async expireOrder(orderId: string, now = new Date()): Promise<boolean> {
+    const head = await this.prisma.paymentOrder.findUnique({ where: { id: orderId }, select: { registrationId: true, eventId: true } });
+    if (!head) return false;
+    const res = await this.prisma.$transaction(async (tx) => {
+      // Lock order: registration → event → order (cancel uses registration → event → no deadlocks).
+      if (head.registrationId) {
+        await tx.$queryRaw`SELECT id FROM registrations WHERE id = ${head.registrationId}::uuid FOR UPDATE`;
+      }
+      await tx.$queryRaw`SELECT id FROM events WHERE id = ${head.eventId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM payment_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      const order = await tx.paymentOrder.findUniqueOrThrow({ where: { id: orderId } });
+      if (order.status !== 'UNPAID' || order.dueAt > now) return null;
+
+      await tx.paymentOrder.update({
+        where: { id: orderId },
+        data: { status: 'EXPIRED', closedAt: now, closeReason: 'เลยกำหนดชำระเงิน', version: { increment: 1 } },
+      });
+      let promotion: Promotion = { promoted: [], orders: [] };
+      if (order.registrationId) {
+        const reg = await tx.registration.findUniqueOrThrow({ where: { id: order.registrationId } });
+        if (reg.status === 'PENDING_PAYMENT') {
+          await tx.registration.update({
+            where: { id: reg.id },
+            data: { status: 'EXPIRED', cancelledAt: now, cancelReason: 'เลยกำหนดชำระเงิน', version: { increment: 1 } },
+          });
+          await tx.$executeRaw`UPDATE events SET seats_taken = seats_taken - ${reg.seats} WHERE id = ${head.eventId}::uuid`;
+          promotion = await this.promoteWaitlist(tx, head.eventId);
+        }
+      }
+      await this.audit.log(
+        { actorId: null, action: 'payment_order.expire', entityType: 'payment_order', entityId: orderId, before: { status: 'UNPAID', dueAt: order.dueAt }, after: { status: 'EXPIRED', promoted: promotion.promoted } },
+        tx,
+      );
+      return promotion;
+    });
+    if (!res) return false;
+    res.orders.forEach((x) => this.payments.scheduleExpiry(x));
+    return true;
+  }
+
+  private eventForOrder(ev: Pick<LockedEvent, 'start_at' | 'payment_window_hours' | 'bank_account_id' | 'income_code_id'>) {
+    return { startAt: ev.start_at, paymentWindowHours: ev.payment_window_hours, bankAccountId: ev.bank_account_id, incomeCodeId: ev.income_code_id };
   }
 
   async lookupByToken(referenceNo: string, token: string) {
@@ -245,6 +355,7 @@ export class RegistrationsService {
     });
     return {
       ...this.toDto(full, full.participantType.code, await this.waitlistPosition(full.id)),
+      payment: await this.payments.orderForRegistration(full.id),
       event: full.event,
     };
   }
@@ -327,7 +438,11 @@ export class RegistrationsService {
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
-    return rows.map((r) => ({ ...this.toDto(r, r.participantType.code, null), event: r.event }));
+    const out = [];
+    for (const r of rows) {
+      out.push({ ...this.toDto(r, r.participantType.code, null), payment: await this.payments.orderForRegistration(r.id), event: r.event });
+    }
+    return out;
   }
 
   // ───────────── helpers ─────────────

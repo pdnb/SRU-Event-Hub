@@ -14,6 +14,7 @@ import {
   AdminEventQueryDto,
   CreateEventDto,
   PublicEventQueryDto,
+  FeeRateInputDto,
   RegistrationFieldDto,
   RescheduleDto,
   UpdateEventDto,
@@ -25,6 +26,11 @@ const summaryInclude = {
   category: { select: { nameTh: true } },
   eventType: { select: { nameTh: true } },
   coverImage: { select: { bucket: true, objectKey: true } },
+  feeRates: {
+    where: { isActive: true },
+    orderBy: { sortOrder: 'asc' },
+    select: { id: true, nameTh: true, amount: true, participantTypeId: true, validFrom: true, validUntil: true, participantType: { select: { nameTh: true } } },
+  },
 } satisfies Prisma.EventInclude;
 
 type EventWithSummary = Prisma.EventGetPayload<{ include: typeof summaryInclude }>;
@@ -161,6 +167,9 @@ export class EventsService {
       eventTypeId: e.eventTypeId,
       categoryId: e.categoryId,
       isFeatured: e.isFeatured,
+      paymentWindowHours: e.paymentWindowHours,
+      bankAccountId: e.bankAccountId,
+      incomeCodeId: e.incomeCodeId,
       cancelReason: e.cancelReason,
       createdAt: e.createdAt.toISOString(),
       updatedAt: e.updatedAt.toISOString(),
@@ -183,6 +192,7 @@ export class EventsService {
   async create(dto: CreateEventDto, user: AuthUser, meta: RequestMeta) {
     await this.access.assertOrg(user, 'event:create', dto.organizationId);
     this.validateDates(dto);
+    const isPaid = this.validateFees(dto.feeRates, dto.bankAccountId);
 
     return this.prisma.$transaction(async (tx) => {
       const code = await this.seq.next(tx, 'EVT');
@@ -211,12 +221,17 @@ export class EventsService {
           allowWaitlist: dto.allowWaitlist ?? true,
           allowSelfCancel: dto.allowSelfCancel ?? true,
           isFeatured: dto.isFeatured ?? false,
+          isPaid,
+          paymentWindowHours: dto.paymentWindowHours ?? 72,
+          bankAccountId: dto.bankAccountId ?? null,
+          incomeCodeId: dto.incomeCodeId ?? null,
           ownerUserId: user.id,
           createdById: user.id,
           organizers: { create: { userId: user.id, role: 'OWNER' } },
         },
       });
       await this.syncRelations(tx, event.id, dto);
+      if (dto.feeRates) await this.syncFees(tx, event.id, dto.feeRates);
       await tx.eventStatusHistory.create({ data: { eventId: event.id, toStatus: 'DRAFT', changedById: user.id } });
       await this.audit.log({ actorId: user.id, action: 'event.create', entityType: 'event', entityId: event.id, after: { code, titleTh: dto.titleTh }, meta }, tx);
       return { id: event.id, code };
@@ -250,15 +265,22 @@ export class EventsService {
       registrationCloseAt: dto.registrationCloseAt !== undefined ? dto.registrationCloseAt : e.registrationCloseAt?.toISOString(),
     };
     this.validateDates(merged);
+    const isPaid = dto.feeRates
+      ? this.validateFees(dto.feeRates, dto.bankAccountId !== undefined ? dto.bankAccountId : e.bankAccountId)
+      : undefined;
+    if (isPaid === undefined && dto.bankAccountId === null && e.isPaid) {
+      throw Errors.validation('กิจกรรมที่มีค่าลงทะเบียนต้องระบุบัญชีรับเงิน');
+    }
 
     return this.prisma.$transaction(async (tx) => {
-      const { version, participantTypeIds: _p, tags: _t, registrationFields: _r, budget, ...scalars } = dto;
+      const { version, participantTypeIds: _p, tags: _t, registrationFields: _r, feeRates, budget, ...scalars } = dto;
       // Optimistic concurrency: fails if someone else saved in between.
       const res = await tx.event.updateMany({
         where: { id, version },
         data: {
           ...scalars,
           ...(budget !== undefined ? { budget: moneyIn(budget) } : {}),
+          ...(isPaid !== undefined ? { isPaid } : {}),
           ...(dto.startAt ? { startAt: new Date(dto.startAt) } : {}),
           ...(dto.endAt ? { endAt: new Date(dto.endAt) } : {}),
           ...(dto.registrationOpenAt !== undefined ? { registrationOpenAt: dto.registrationOpenAt ? new Date(dto.registrationOpenAt) : null } : {}),
@@ -269,6 +291,7 @@ export class EventsService {
       });
       if (res.count !== 1) throw Errors.conflict('VERSION_CONFLICT', 'ข้อมูลถูกแก้ไขโดยผู้อื่นแล้ว กรุณาโหลดข้อมูลใหม่');
       await this.syncRelations(tx, id, dto, fullyEditable);
+      if (feeRates) await this.syncFees(tx, id, feeRates);
       await this.audit.log({ actorId: user.id, action: 'event.update', entityType: 'event', entityId: id, before: { version: e.version }, after: dto, meta }, tx);
       return { id, version: version + 1 };
     });
@@ -310,6 +333,18 @@ export class EventsService {
         data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'กิจกรรมถูกยกเลิก' },
       });
       await tx.event.update({ where: { id }, data: { seatsTaken: 0 } });
+      // Money side (spec §4.7.6): pending slips are voided, unpaid orders cancelled,
+      // paid orders flagged for refund (handled by the refund process).
+      const now = new Date();
+      await tx.payment.updateMany({
+        where: { status: 'SUBMITTED', order: { eventId: id } },
+        data: { status: 'VOIDED', voidedAt: now, voidedById: user.id, voidReason: 'กิจกรรมถูกยกเลิก' },
+      });
+      await tx.paymentOrder.updateMany({
+        where: { eventId: id, status: { in: ['UNPAID', 'PENDING_VERIFICATION'] } },
+        data: { status: 'CANCELLED', closedAt: now, closeReason: 'กิจกรรมถูกยกเลิก' },
+      });
+      await tx.paymentOrder.updateMany({ where: { eventId: id, status: 'PAID' }, data: { status: 'REFUND_PENDING', closeReason: 'กิจกรรมถูกยกเลิก' } });
     });
   }
 
@@ -412,6 +447,36 @@ export class EventsService {
     if (close && close > end) throw Errors.validation('วันปิดรับสมัครต้องไม่เกินวันสิ้นสุดกิจกรรม');
   }
 
+  /** Returns isPaid. A paid event needs a receiving account (FIN-4) so invoices can be issued. */
+  private validateFees(rates: FeeRateInputDto[] | undefined, bankAccountId: string | null | undefined): boolean {
+    if (!rates) return false;
+    for (const r of rates) {
+      if (r.validFrom && r.validUntil && !(new Date(r.validUntil) > new Date(r.validFrom))) {
+        throw Errors.validation(`อัตรา "${r.nameTh}": วันสิ้นสุดต้องอยู่หลังวันเริ่มต้น`);
+      }
+    }
+    const isPaid = rates.some((r) => Number(r.amount) > 0);
+    if (isPaid && !bankAccountId) throw Errors.validation('กิจกรรมที่มีค่าลงทะเบียนต้องระบุบัญชีรับเงิน');
+    return isPaid;
+  }
+
+  /** Old rates are deactivated (orders keep their own snapshot and FK), new ones inserted. */
+  private async syncFees(tx: Tx, eventId: string, rates: FeeRateInputDto[]) {
+    await tx.eventFeeRate.updateMany({ where: { eventId, isActive: true }, data: { isActive: false } });
+    if (!rates.length) return;
+    await tx.eventFeeRate.createMany({
+      data: rates.map((r, i) => ({
+        eventId,
+        nameTh: r.nameTh.trim(),
+        amount: moneyIn(r.amount)!,
+        participantTypeId: r.participantTypeId ?? null,
+        validFrom: r.validFrom ? new Date(r.validFrom) : null,
+        validUntil: r.validUntil ? new Date(r.validUntil) : null,
+        sortOrder: i,
+      })),
+    });
+  }
+
   private async syncRelations(
     tx: Tx,
     eventId: string,
@@ -482,7 +547,11 @@ export class EventsService {
       capacity: e.capacity,
       seatsTaken: e.seatsTaken,
       isPaid: e.isPaid,
-      minFee: null, // fee module (Phase 2)
+      // Lowest non-zero rate ("เริ่มต้น … บาท"); free participant-type rates are shown on the detail page.
+      minFee: (() => {
+        const paid = e.feeRates.filter((r) => r.amount.greaterThan(0));
+        return e.isPaid && paid.length ? moneyOut(paid.reduce((m, r) => (r.amount.lessThan(m) ? r.amount : m), paid[0]!.amount)) : null;
+      })(),
       coverImageUrl: e.coverImage ? `/files/public/${e.coverImage.objectKey}` : null,
       registrationOpen: isRegistrationOpen(e),
     };
@@ -508,6 +577,15 @@ export class EventsService {
         helpText: f.helpText,
         maxLength: f.maxLength,
         options: f.options.map((o) => ({ value: o.value, labelTh: o.labelTh })),
+      })),
+      feeRates: e.feeRates.map((r) => ({
+        id: r.id,
+        nameTh: r.nameTh,
+        amount: moneyOut(r.amount)!,
+        participantTypeId: r.participantTypeId,
+        participantTypeName: r.participantType?.nameTh ?? null,
+        validFrom: r.validFrom?.toISOString() ?? null,
+        validUntil: r.validUntil?.toISOString() ?? null,
       })),
       participantTypes: e.participantTypes.map((p) => ({
         id: p.participantType.id,

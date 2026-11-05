@@ -84,6 +84,18 @@ export interface EventDetailDto extends EventSummaryDto {
   allowSelfCancel: boolean;
   /** Organizer-defined extra questions for the registration form. */
   registrationFields: RegistrationFieldDto[];
+  /** Active fee rates (public view). Empty for free events. */
+  feeRates: FeeRateDto[];
+}
+
+export interface FeeRateDto {
+  id: string;
+  nameTh: string;
+  amount: MoneyString;
+  participantTypeId: string | null;
+  participantTypeName: string | null;
+  validFrom: string | null;
+  validUntil: string | null;
 }
 
 export interface RegistrationFieldDto {
@@ -107,4 +119,85 @@ export interface RegistrationDto {
   participantTypeCode: string;
   createdAt: string;
   waitlistPosition: number | null;
+  /** Present when the registration has a live payment order. */
+  payment?: PaymentOrderDto | null;
+}
+
+/** Receiving account as printed on the payment order (snapshot). */
+export interface BankAccountSnapshot {
+  bankName: string;
+  branch: string | null;
+  accountNo: string;
+  accountName: string;
+  promptPayId: string | null;
+}
+
+export interface PaymentOrderDto {
+  id: string;
+  orderNo: string;
+  status: string;
+  amount: MoneyString;
+  /** Thai baht text, e.g. "หนึ่งพันห้าร้อยบาทถ้วน". */
+  amountText: string;
+  feeName: string;
+  dueAt: string;
+  paidAt: string | null;
+  bankAccount: BankAccountSnapshot | null;
+  /** EMVCo PromptPay payload with the exact amount (render as QR). null when no PromptPay id. */
+  promptPayPayload: string | null;
+  /** Latest payment attempt (slip) on this order. */
+  latestPayment: PaymentDto | null;
+}
+
+export interface PaymentDto {
+  id: string;
+  paymentNo: string;
+  channel: string;
+  status: string;
+  amount: MoneyString;
+  transferredAt: string | null;
+  submittedAt: string;
+  verifiedAt: string | null;
+  rejectReason: string | null;
+  hasSlip: boolean;
+}
+
+/** Finance-side row: payment + order + registrant + event context. */
+export interface FinancePaymentRowDto extends PaymentDto {
+  orderId: string;
+  orderNo: string;
+  orderStatus: string;
+  payerName: string;
+  payerEmail: string;
+  registrationId: string | null;
+  referenceNo: string | null;
+  eventId: string;
+  eventCode: string;
+  eventTitle: string;
+  verifiedByName: string | null;
+  batchNo: string | null;
+  receiptNo: string | null;
+}
+
+export interface FinanceBatchDto {
+  id: string;
+  batchNo: string;
+  status: string;
+  eventId: string;
+  eventCode: string;
+  eventTitle: string;
+  organizationId: string;
+  organizationName: string;
+  totalAmount: MoneyString;
+  totalAmountText: string;
+  itemCount: number;
+  receiptCount: number;
+  note: string | null;
+  createdByName: string;
+  createdAt: string;
+  submittedAt: string | null;
+  receivedAt: string | null;
+  receivedByName: string | null;
+  returnedAt: string | null;
+  returnReason: string | null;
 }

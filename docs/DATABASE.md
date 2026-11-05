@@ -36,10 +36,22 @@ system: `files, audit_logs, activity_logs, system_settings, document_sequences, 
 `seats_taken` นับ PENDING_PAYMENT + CONFIRMED (spec §4.6) — การลงทะเบียนกลุ่ม (P3) จองทั้งก้อนด้วย `n = จำนวนสมาชิก` ในคำสั่งเดียว
 
 ## เลขเอกสาร
-`document_sequences(prefix, fiscal_year)` + `INSERT … ON CONFLICT DO UPDATE … RETURNING` ภายใน transaction ธุรกรรม → ไม่ซ้ำ ไม่ข้าม เช่น `EVT-2570-000001`, `REG-…`, (P2) `PAY-…`
+`document_sequences(prefix, fiscal_year)` + `INSERT … ON CONFLICT DO UPDATE … RETURNING` ภายใน transaction ธุรกรรม → ไม่ซ้ำ ไม่ข้าม เช่น `EVT-2570-000001`, `REG-…`, `INV-…` (ใบแจ้งชำระ), `PAY-…` (รายการชำระ), `FB-…` (ชุดนำส่ง)
+
+## Migration `finance` (P2a)
+ตาราง: `bank_accounts`, `income_codes`, `event_fee_rates`, `payment_orders`, `payments`, `payment_ledger_entries`, `finance_batches`, `finance_batch_items`, `receipt_records` + คอลัมน์ `events.payment_window_hours / bank_account_id / income_code_id`
+
+Constraint/trigger เพิ่มเติม (เขียนเองใน migration):
+- CHECK จำนวนเงิน (`> 0` สำหรับใบแจ้งชำระ/รายการชำระ/รายการในชุด/ใบเสร็จ, `>= 0` สำหรับอัตรา), ช่วงเวลาอัตรา, `payment_window_hours` 1–720
+- Partial unique: ใบแจ้งชำระที่ยังมีผล 1 ใบต่อการลงทะเบียน · รายการรอตรวจสอบ 1 รายการต่อใบแจ้ง · `slip_sha256` ห้ามซ้ำในรายการที่ยังมีผล · รายการชำระอยู่ในชุดนำส่งที่ใช้งานได้ชุดเดียว · ใบเสร็จที่ไม่ถูกยกเลิก 1 ใบต่อรายการ
+- `payment_ledger_entries` append-only (ใช้ `forbid_update_delete()`)
+- `forbid_amount_change()`: ห้ามแก้ `amount` และห้ามลบแถวใน `payment_orders, payments, finance_batch_items, receipt_records`
+- `forbid_batch_total_change()`: ยอดรวม/จำนวนรายการของ `finance_batches` แก้ไม่ได้ และลบไม่ได้
+
+ลำดับการล็อกแถว (กัน deadlock): registration → event → payment_order → payment
 
 ## ตารางระยะถัดไป (ออกแบบตาม spec §6)
-- **P2 Payment & Finance**: `bank_accounts, income_codes, event_fee_settings, event_fee_rates, billing_infos, payment_orders (CHECK registration_id XOR group_id), payment_order_lines, payments, payment_evidences (unique sha256), payment_verifications, payment_waivers, payment_ledger_entries (append-only), cashier_sessions, cash_remittances, finance_batches, finance_batch_items (snapshot + คอลัมน์ค้นหา), receipt_stocks, receipt_records (unique ปีงบ+เล่ม+เลขที่), refunds (บัญชีเข้ารหัส AES-256-GCM), bank_statement_imports, bank_statement_lines`
+- **P2b Payment & Finance (ส่วนที่เหลือ)**: `billing_infos, payment_order_lines (ใบแจ้งรวมของกลุ่ม P3: CHECK registration_id XOR group_id), cashier_sessions, cash_remittances, receipt_stocks, refunds (บัญชีเข้ารหัส AES-256-GCM), bank_statement_imports, bank_statement_lines`
 - **P3 Group**: `participant_organizations, organization_coordinators, event_group_settings, registration_groups, group_member_invitations (hash token), group_imports, group_import_rows, group_change_logs, group_consents` + `registrations.group_id`
 - **P4**: `checkin_tokens, checkin_records, checkin_locations, attendance_records, badge_templates, badge_template_fields, badge_color_rules, badge_print_jobs, badge_prints, event_personnel`
 - **P5**: `certificate_templates, certificates, certificate_verifications, evaluation_forms, evaluation_questions, evaluation_options, evaluation_responses, evaluation_answers`

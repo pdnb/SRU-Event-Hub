@@ -4,6 +4,7 @@ import { CalendarOutlined, EnvironmentOutlined, TeamOutlined } from '@ant-design
 import { Card, Flex, Tag, Typography } from 'antd';
 import Link from 'next/link';
 import type { EventSummaryDto } from '@sru/shared-types';
+import { formatMoney } from '@sru/shared-utils';
 import { ThaiDateRange } from '@/components/Format';
 import { brand } from '@/styles/theme';
 import { seatsText } from './format';
@@ -57,7 +58,7 @@ export function EventCard({ event }: { event: EventSummaryDto }) {
           ) : (
             <Tag>{new Date(event.endAt) < new Date() ? 'จัดไปแล้ว' : 'ยังไม่เปิด/ปิดรับสมัคร'}</Tag>
           )}
-          <Tag color={event.isPaid ? 'orange' : 'blue'}>{event.isPaid ? 'มีค่าลงทะเบียน' : 'ไม่มีค่าใช้จ่าย'}</Tag>
+          <Tag color={event.isPaid ? 'orange' : 'blue'}>{event.isPaid ? (event.minFee ? `เริ่มต้น ${formatMoney(event.minFee)} บาท` : 'มีค่าลงทะเบียน') : 'ไม่มีค่าใช้จ่าย'}</Tag>
         </Flex>
       </Card>
     </Link>

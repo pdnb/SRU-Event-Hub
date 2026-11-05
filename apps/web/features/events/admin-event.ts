@@ -9,6 +9,9 @@ export type AdminEventDto = EventDetailDto & {
   eventTypeId: string | null;
   categoryId: string | null;
   isFeatured: boolean;
+  paymentWindowHours: number;
+  bankAccountId: string | null;
+  incomeCodeId: string | null;
   cancelReason: string | null;
   createdAt: string;
   updatedAt: string;
@@ -38,6 +41,15 @@ export function toFormValues(e: AdminEventDto): Partial<EventFormValues> {
     isFeatured: e.isFeatured,
     participantTypeIds: e.participantTypes.map((p) => p.id),
     tags: e.tags,
+    feeRates: e.feeRates.map((r) => ({
+      nameTh: r.nameTh,
+      amount: r.amount,
+      participantTypeId: r.participantTypeId,
+      validRange: r.validFrom || r.validUntil ? [r.validFrom, r.validUntil] : null,
+    })),
+    paymentWindowHours: e.paymentWindowHours,
+    bankAccountId: e.bankAccountId,
+    incomeCodeId: e.incomeCodeId,
     registrationFields: e.registrationFields.map((f) => ({
       key: f.key,
       labelTh: f.labelTh,

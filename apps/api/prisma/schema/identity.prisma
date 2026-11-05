@@ -43,45 +43,51 @@ model User {
   updatedById     String?    @map("updated_by_id") @db.Uuid
   deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(6)
 
-  profile        UserProfile?
-  identities     AuthIdentity[]
-  refreshTokens  RefreshToken[]
-  loginHistory   LoginHistory[]
-  roles          UserRole[]     @relation("UserRoles")
-  rolesGranted   UserRole[]     @relation("RoleGrantedBy")
-  organizations  UserOrganization[]
-  headOf         Organization[] @relation("OrgHead")
-  eventsOwned    Event[]        @relation("EventOwner")
-  eventsCreated  Event[]        @relation("EventCreatedBy")
-  registrations  Registration[] @relation("RegistrationUser")
-  notifications  Notification[]
-  approvalsDone  ApprovalAction[]
-  approvalSteps  ApprovalStep[]
-  approvalSubmits ApprovalRequest[]
-  eventOrganizer EventOrganizer[]
-  statusChanges  EventStatusHistory[]
-  files          File[]
-  bookings       VenueBooking[] @relation("BookingRequester")
-  bookingsDecided VenueBooking[] @relation("BookingApprover")
+  profile           UserProfile?
+  identities        AuthIdentity[]
+  refreshTokens     RefreshToken[]
+  loginHistory      LoginHistory[]
+  roles             UserRole[]           @relation("UserRoles")
+  rolesGranted      UserRole[]           @relation("RoleGrantedBy")
+  organizations     UserOrganization[]
+  headOf            Organization[]       @relation("OrgHead")
+  eventsOwned       Event[]              @relation("EventOwner")
+  eventsCreated     Event[]              @relation("EventCreatedBy")
+  registrations     Registration[]       @relation("RegistrationUser")
+  notifications     Notification[]
+  approvalsDone     ApprovalAction[]
+  approvalSteps     ApprovalStep[]
+  approvalSubmits   ApprovalRequest[]
+  eventOrganizer    EventOrganizer[]
+  statusChanges     EventStatusHistory[]
+  files             File[]
+  bookings          VenueBooking[]       @relation("BookingRequester")
+  bookingsDecided   VenueBooking[]       @relation("BookingApprover")
+  paymentsSubmitted Payment[]            @relation("PaymentSubmittedBy")
+  paymentsVerified  Payment[]            @relation("PaymentVerifiedBy")
+  ledgerEntries     PaymentLedgerEntry[] @relation("LedgerCreatedBy")
+  batchesCreated    FinanceBatch[]       @relation("BatchCreatedBy")
+  batchesReceived   FinanceBatch[]       @relation("BatchReceivedBy")
+  receiptsRecorded  ReceiptRecord[]      @relation("ReceiptRecordedBy")
 
   @@index([status])
   @@map("users")
 }
 
 model UserProfile {
-  userId      String  @id @map("user_id") @db.Uuid
-  prefix      String? @db.VarChar(50)
-  firstNameTh String? @map("first_name_th") @db.VarChar(150)
-  lastNameTh  String? @map("last_name_th") @db.VarChar(150)
-  firstNameEn String? @map("first_name_en") @db.VarChar(150)
-  lastNameEn  String? @map("last_name_en") @db.VarChar(150)
-  nickname    String? @db.VarChar(100)
-  phone       String? @db.VarChar(20)
-  staffCode   String? @unique @map("staff_code") @db.VarChar(30)
-  studentCode String? @unique @map("student_code") @db.VarChar(30)
-  program     String? @db.VarChar(300)
-  avatarFileId String? @map("avatar_file_id") @db.Uuid
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  userId       String   @id @map("user_id") @db.Uuid
+  prefix       String?  @db.VarChar(50)
+  firstNameTh  String?  @map("first_name_th") @db.VarChar(150)
+  lastNameTh   String?  @map("last_name_th") @db.VarChar(150)
+  firstNameEn  String?  @map("first_name_en") @db.VarChar(150)
+  lastNameEn   String?  @map("last_name_en") @db.VarChar(150)
+  nickname     String?  @db.VarChar(100)
+  phone        String?  @db.VarChar(20)
+  staffCode    String?  @unique @map("staff_code") @db.VarChar(30)
+  studentCode  String?  @unique @map("student_code") @db.VarChar(30)
+  program      String?  @db.VarChar(300)
+  avatarFileId String?  @map("avatar_file_id") @db.Uuid
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -90,12 +96,12 @@ model UserProfile {
 
 /// External identity (Google OIDC) linked to a local user.
 model AuthIdentity {
-  id         String   @id @default(uuid(7)) @db.Uuid
-  userId     String   @map("user_id") @db.Uuid
-  provider   String   @db.VarChar(30)
-  subject    String   @db.VarChar(255)
-  email      String?  @db.VarChar(254)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id         String    @id @default(uuid(7)) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  provider   String    @db.VarChar(30)
+  subject    String    @db.VarChar(255)
+  email      String?   @db.VarChar(254)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -108,16 +114,16 @@ model AuthIdentity {
 /// Rotating refresh tokens. Only the SHA-256 of the token is stored.
 /// Re-use of a rotated token revokes the whole family (theft detection).
 model RefreshToken {
-  id           String    @id @default(uuid(7)) @db.Uuid
-  userId       String    @map("user_id") @db.Uuid
-  familyId     String    @map("family_id") @db.Uuid
-  tokenHash    String    @unique @map("token_hash") @db.Char(64)
-  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
-  rotatedAt    DateTime? @map("rotated_at") @db.Timestamptz(6)
-  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(6)
-  ip           String?   @db.VarChar(64)
-  userAgent    String?   @map("user_agent") @db.VarChar(500)
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  familyId  String    @map("family_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  rotatedAt DateTime? @map("rotated_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  ip        String?   @db.VarChar(64)
+  userAgent String?   @map("user_agent") @db.VarChar(500)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

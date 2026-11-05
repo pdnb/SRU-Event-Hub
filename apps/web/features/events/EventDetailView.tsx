@@ -1,10 +1,10 @@
 'use client';
 
 import { CalendarOutlined, EnvironmentOutlined, TeamOutlined } from '@ant-design/icons';
-import { Breadcrumb, Card, Col, Descriptions, Flex, Row, Tag } from 'antd';
+import { Breadcrumb, Card, Col, Descriptions, Flex, Row, Tag, Typography } from 'antd';
 import Link from 'next/link';
 import type { EventDetailDto } from '@sru/shared-types';
-import { ThaiDate, ThaiDateRange } from '@/components/Format';
+import { Money, ThaiDate, ThaiDateRange } from '@/components/Format';
 import { RegisterPanel } from '@/features/registration/RegisterPanel';
 import { brand } from '@/styles/theme';
 import { seatsText } from './format';
@@ -63,7 +63,27 @@ export function EventDetailView({ event: e }: { event: EventDetailDto }) {
               <Descriptions.Item label="เปิดรับสมัคร">
                 <ThaiDate value={e.registrationOpenAt} time /> – <ThaiDate value={e.registrationCloseAt} time />
               </Descriptions.Item>
-              <Descriptions.Item label="ค่าลงทะเบียน">{e.isPaid ? 'มีค่าลงทะเบียน (รายละเอียดอัตราจะแสดงเมื่อเปิดระบบชำระเงิน)' : 'ไม่มีค่าใช้จ่าย'}</Descriptions.Item>
+              <Descriptions.Item label="ค่าลงทะเบียน">
+                {e.isPaid ? (
+                  <ul style={{ margin: 0, paddingInlineStart: 18 }}>
+                    {e.feeRates.map((r) => (
+                      <li key={r.id}>
+                        {r.nameTh}
+                        {r.participantTypeName ? ` (${r.participantTypeName})` : ''}: <Money value={r.amount} />
+                        {(r.validFrom || r.validUntil) && (
+                          <Typography.Text type="secondary">
+                            {' '}
+                            {r.validFrom ? <>ตั้งแต่ <ThaiDate value={r.validFrom} /> </> : null}
+                            {r.validUntil ? <>ถึง <ThaiDate value={new Date(new Date(r.validUntil).getTime() - 1)} /></> : null}
+                          </Typography.Text>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  'ไม่มีค่าใช้จ่าย'
+                )}
+              </Descriptions.Item>
             </Descriptions>
           </Card>
         </Col>

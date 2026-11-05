@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Alert, Button, Card, Checkbox, Col, DatePicker, Form, Input, InputNumber, Radio, Result, Row, Select, Typography } from 'antd';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -11,6 +12,7 @@ import { ApiError, newIdempotencyKey } from '@sru/api-client';
 import type { EventDetailDto, RegistrationFieldDto } from '@sru/shared-types';
 import { registrationSchema } from '@sru/validation';
 import { RhfField } from '@/components/form/RhfField';
+import { PaymentPanel } from '@/features/payment/PaymentPanel';
 import { useMe } from '@/hooks/useMe';
 import { api } from '@/services/api';
 import dayjs, { DATE_FMT } from '@/services/dayjs';
@@ -37,6 +39,7 @@ function buildSchema(fields: RegistrationFieldDto[]) {
 
 export function RegisterPanel({ event }: { event: EventDetailDto }) {
   const me = useMe();
+  const router = useRouter();
   const lookups = useQuery({ queryKey: ['lookups'], queryFn: () => api.public.lookups(), staleTime: 600_000 });
   const types = event.participantTypes.length ? event.participantTypes : (lookups.data?.participantTypes ?? []);
   const schema = useMemo(() => buildSchema(event.registrationFields), [event.registrationFields]);
@@ -78,8 +81,8 @@ export function RegisterPanel({ event }: { event: EventDetailDto }) {
     return (
       <Card>
         <Result
-          status={r.status === 'WAITLISTED' ? 'info' : 'success'}
-          title={r.status === 'WAITLISTED' ? 'อยู่ในรายชื่อสำรอง' : 'ลงทะเบียนสำเร็จ'}
+          status={r.status === 'WAITLISTED' ? 'info' : r.status === 'PENDING_PAYMENT' ? 'warning' : 'success'}
+          title={r.status === 'WAITLISTED' ? 'อยู่ในรายชื่อสำรอง' : r.status === 'PENDING_PAYMENT' ? 'ลงทะเบียนแล้ว — กรุณาชำระเงินเพื่อยืนยันสิทธิ์' : 'ลงทะเบียนสำเร็จ'}
           subTitle={
             <>
               เลขอ้างอิง <Typography.Text strong copyable>{r.referenceNo}</Typography.Text>
@@ -92,6 +95,15 @@ export function RegisterPanel({ event }: { event: EventDetailDto }) {
             </Link>
           }
         />
+        {r.payment && (
+          <div style={{ marginBottom: 16 }}>
+            <PaymentPanel
+              order={r.payment}
+              upload={(file, transferredAt) => api.public.uploadSlip(r.referenceNo, r.accessToken, file, { transferredAt })}
+              onChanged={() => router.push(link)}
+            />
+          </div>
+        )}
         <Alert
           type="warning"
           showIcon
@@ -106,13 +118,6 @@ export function RegisterPanel({ event }: { event: EventDetailDto }) {
     return (
       <Card title="ลงทะเบียน">
         <Alert type="info" showIcon title={new Date(event.endAt) < new Date() ? 'กิจกรรมนี้จัดไปแล้ว' : 'ขณะนี้ยังไม่เปิดหรือปิดรับสมัครแล้ว'} />
-      </Card>
-    );
-  }
-  if (event.isPaid) {
-    return (
-      <Card title="ลงทะเบียน">
-        <Alert type="info" showIcon title="กิจกรรมที่มีค่าลงทะเบียน" description="ระบบชำระเงินออนไลน์อยู่ระหว่างเปิดใช้งาน กรุณาติดต่อหน่วยงานผู้จัด" />
       </Card>
     );
   }

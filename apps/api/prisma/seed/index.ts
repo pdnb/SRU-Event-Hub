@@ -5,6 +5,7 @@
  * generated and printed once. Nothing secret is hard-coded. Never run the demo
  * part in production: set SEED_DEMO=false to load only reference data.
  */
+import { seedFinance, seedFinanceDemo } from './finance';
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as argon2 from 'argon2';
@@ -291,8 +292,10 @@ async function main() {
   await seedVenues();
   await seedSettings();
   await seedWorkflow(orgIds);
+  await seedFinance(prisma, orgIds);
   if (DEMO) {
     const pw = await seedDemo(orgIds);
+    await seedFinanceDemo(prisma);
     console.log('\n✔ Seed complete. Demo accounts: <username>@demo.sru.ac.th or username');
     console.log('  usernames: superadmin, sysadmin, executive, central, sci.dean, sci.admin, sci.manager, sa.manager, sa.head,');
     console.log('             finance, sci.finance, cashier, staff, lecturer, student, coordinator');

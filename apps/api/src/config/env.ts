@@ -82,6 +82,19 @@ export class Env {
   @IsOptional() @IsString() S3_SECRET_KEY?: string;
   @IsOptional() @IsString() S3_BUCKET_PUBLIC?: string;
   @IsOptional() @IsString() S3_BUCKET_PRIVATE?: string;
+  @IsOptional() @Transform(toBool) @IsBoolean() S3_FORCE_PATH_STYLE = true;
+
+  /** Max upload size for payment slips (bytes). */
+  @Transform(({ value }) => Number(value))
+  @IsInt()
+  @Min(100_000)
+  @Max(20_000_000)
+  SLIP_MAX_BYTES = 5_000_000;
+
+  /** BullMQ workers (payment expiry, notifications). Disabled in unit/e2e tests. */
+  @Transform(toBool)
+  @IsBoolean()
+  QUEUE_ENABLED = true;
 }
 
 export function validateEnv(raw: Record<string, unknown>): Env {
