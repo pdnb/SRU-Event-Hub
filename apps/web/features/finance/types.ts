@@ -35,6 +35,8 @@ export interface CashPaymentDto {
   payerName: string;
   referenceNo: string | null;
   voidReason: string | null;
+  /** FIN-12: recorded offline and synced later – when the cash was taken. */
+  capturedOfflineAt: string | null;
 }
 
 export interface PayableDto {

@@ -3,7 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthUser } from '../auth/auth.types';
 import { CurrentUser, Idempotent, ReqMeta, RequestMeta, RequirePermissions } from '../common/decorators';
 import { FinanceBatchesService } from './finance-batches.service';
-import { BatchQueryDto, CreateBatchDto, EligibleQueryDto, RecordReceiptsDto, RejectDto } from './payments.dto';
+import { BatchQueryDto, CreateBatchDto, EligibleQueryDto, ExportFormatDto, RecordReceiptsDto, RejectDto } from './payments.dto';
 
 @ApiTags('finance-batches')
 @Controller('finance/batches')
@@ -44,9 +44,10 @@ export class FinanceBatchesController {
   }
 
   @RequirePermissions('finance_batch:export')
+  @ApiOperation({ summary: 'รายงานนำส่งเงิน (PDF / Excel) ตามแม่แบบใน system_settings' })
   @Get(':id/export')
-  export(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @ReqMeta() m: RequestMeta) {
-    return this.batches.export(id, u, m);
+  export(@Param('id', ParseUUIDPipe) id: string, @Query() q: ExportFormatDto, @CurrentUser() u: AuthUser, @ReqMeta() m: RequestMeta) {
+    return this.batches.export(id, q.format, u, m);
   }
 
   @RequirePermissions('finance_batch:submit')

@@ -12,7 +12,7 @@
 | §4.4 Approval | P1 | ✅ กำหนดขั้นเอง, สายบังคับบัญชา, ขั้นตรวจการเงิน, ประวัติ append-only; UI แก้ workflow → P5 (ปัจจุบันตั้งผ่าน seed/DB) |
 | §4.5 Portal | P1 | ✅ หน้าแรก, ทั้งหมด/เปิดรับ/กำลังจัด/ย้อนหลัง, ปฏิทิน, รายละเอียด, ลงทะเบียน, ตรวจสถานะ, ค้นหา/กรอง, แนะนำ, แชร์ — หน้าชำระเงิน ✅ P2a, กลุ่ม (P3) |
 | §4.6 Registration | P1 | ✅ รายบุคคล, guest, ป้องกันซ้ำ, จำกัดที่นั่ง atomic, waitlist, idempotency, export — §4.6.1 กลุ่ม → P3 |
-| §4.7 Payment & Finance | P2a ✅ / P2b ✅ / P2c | `apps/api/src/payments` — ดู [PAYMENT.md](PAYMENT.md) (PDF ตามแบบฟอร์ม/กระทบยอด → P2c รอกองคลัง) |
+| §4.7 Payment & Finance | P2a ✅ / P2b ✅ / P2c ✅ | `apps/api/src/payments` — ดู [PAYMENT.md](PAYMENT.md) (แม่แบบเอกสารเป็นค่าชั่วคราว รอแบบฟอร์มจริง FIN-1) |
 | §4.8 QR/Check-in, §4.8.1 Badges, §4.9 Attendance | P4 | |
 | §4.10 Certificates, §4.11 Evaluation | P5 | |
 | §4.12 Notifications | P2b–P5 | ตารางพร้อม, โครง BullMQ พร้อม (ใช้กับหมดเวลาชำระแล้ว) |

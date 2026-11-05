@@ -19,6 +19,7 @@ enum ApprovalStatus {
   APPROVED
   REJECTED
   RETURNED
+  CANCELLED // withdrawn by the proposer (FEE_CHANGE requests)
 }
 
 enum EventOrganizerRole {

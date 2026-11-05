@@ -161,3 +161,13 @@ export class PublicEventQueryDto extends PageQueryDto {
   @IsOptional() @Transform(bool) @IsBoolean() isPaid?: boolean;
   @IsOptional() @Transform(bool) @IsBoolean() featured?: boolean;
 }
+
+/** ขอแก้ไขอัตราค่าลงทะเบียนหลังอนุมัติ → ต้องผ่าน workflow อนุมัติอีกครั้ง (FEE_CHANGE). */
+export class FeeChangeDto {
+  @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => FeeRateInputDto)
+  feeRates!: FeeRateInputDto[];
+  /** Omitted = keep the current receiving account / income code. */
+  @IsOptional() @IsUUID() bankAccountId?: string | null;
+  @IsOptional() @IsUUID() incomeCodeId?: string | null;
+  @IsString() @MinLength(3) @MaxLength(1000) reason!: string;
+}

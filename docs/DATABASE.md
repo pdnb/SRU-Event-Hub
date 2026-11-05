@@ -56,8 +56,16 @@ Constraint/trigger เพิ่มเติม (เขียนเองใน m
 
 ลำดับการล็อกแถว (กัน deadlock): registration → event / cashier_session → payment_order → payment
 
+## Migration `finance_p2c` (P2c)
+ตาราง: `bank_statements`, `bank_statement_lines` · คอลัมน์: `payment_orders.billing_*` (FIN-9), `payments.captured_offline_at` (FIN-12), `approval_requests.payload / reason` (FEE_CHANGE) · enum `ApprovalStatus` + `CANCELLED`
+- `approval_requests_one_pending_per_event`: partial unique — คำขออนุมัติที่ PENDING ได้ 1 รายการต่อกิจกรรม
+- `payment_orders_billing_chk`: JURISTIC ต้องมีชื่อและเลขผู้เสียภาษี 13 หลัก (checksum ตรวจที่ API)
+- `bank_statements`: append-only (`forbid_update_delete()`), unique (บัญชี, SHA-256 ไฟล์)
+- `bank_statement_lines`: `amount > 0` และแก้/ลบไม่ได้ (`forbid_amount_change()`), unique (บัญชี, fingerprint) กันนำเข้ารายการซ้ำจากไฟล์ที่ช่วงเวลาทับกัน, CHECK สถานะ AUTO/MANUAL ⇔ มี payment_id, partial unique `payment_id` WHERE AUTO/MANUAL (1 รายการชำระจับคู่ได้ 1 บรรทัด)
+- การจับคู่ทุกครั้งล็อกแถว `bank_accounts` ของบัญชีนั้นก่อน
+
 ## ตารางระยะถัดไป (ออกแบบตาม spec §6)
-- **P2b Payment & Finance (ส่วนที่เหลือ)**: `billing_infos, payment_order_lines (ใบแจ้งรวมของกลุ่ม P3: CHECK registration_id XOR group_id), cashier_sessions, cash_remittances, receipt_stocks, refunds (บัญชีเข้ารหัส AES-256-GCM), bank_statement_imports, bank_statement_lines`
+- **Payment & Finance (ส่วนที่เหลือ)**: `payment_order_lines` (ใบแจ้งรวมของกลุ่ม P3: CHECK registration_id XOR group_id), `receipt_stocks` — ข้อมูลออกใบเสร็จ (P2c) เก็บเป็นคอลัมน์ `payment_orders.billing_*` แทนตาราง `billing_infos`
 - **P3 Group**: `participant_organizations, organization_coordinators, event_group_settings, registration_groups, group_member_invitations (hash token), group_imports, group_import_rows, group_change_logs, group_consents` + `registrations.group_id`
 - **P4**: `checkin_tokens, checkin_records, checkin_locations, attendance_records, badge_templates, badge_template_fields, badge_color_rules, badge_print_jobs, badge_prints, event_personnel`
 - **P5**: `certificate_templates, certificates, certificate_verifications, evaluation_forms, evaluation_questions, evaluation_options, evaluation_responses, evaluation_answers`

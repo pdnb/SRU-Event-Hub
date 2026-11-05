@@ -8,6 +8,7 @@ import {
   CloseSessionDto,
   CollectDto,
   CreateRefundDto,
+  ExportFormatDto,
   OpenSessionDto,
   PayablesQueryDto,
   PayRefundDto,
@@ -54,7 +55,28 @@ export class CashierController {
   @ApiOperation({ summary: 'รับชำระเงินสดหน้างาน (ยอดตามใบแจ้งชำระ)' })
   @Post(':id/collect')
   collect(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CollectDto, @CurrentUser() u: AuthUser, @ReqMeta() m: RequestMeta) {
-    return this.cashier.collect(id, dto.orderId, u, m);
+    return this.cashier.collect(id, dto.orderId, u, m, dto.capturedAt);
+  }
+
+  @RequirePermissions('cashier:collect')
+  @ApiOperation({ summary: 'รายชื่อค้างชำระทั้งหมดสำหรับโหมดออฟไลน์ (FIN-12)' })
+  @Get(':id/offline-pack')
+  offlinePack(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
+    return this.cashier.offlinePack(id, u);
+  }
+
+  @RequirePermissions('cashier:collect')
+  @ApiOperation({ summary: 'รายชื่อค้างชำระแบบกระดาษ (PDF) สำรองกรณีอุปกรณ์ขัดข้อง' })
+  @Get(':id/offline-sheet')
+  offlineSheet(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @ReqMeta() m: RequestMeta) {
+    return this.cashier.offlineSheet(id, u, m);
+  }
+
+  @RequirePermissions('cashier:view')
+  @ApiOperation({ summary: 'ใบนำส่งเงินสด (PDF / Excel) ตามแม่แบบใน system_settings' })
+  @Get(':id/remittance-document')
+  remittanceDocument(@Param('id', ParseUUIDPipe) id: string, @Query() q: ExportFormatDto, @CurrentUser() u: AuthUser, @ReqMeta() m: RequestMeta) {
+    return this.cashier.remittanceDocument(id, q.format, u, m);
   }
 
   @RequirePermissions('cashier:collect')

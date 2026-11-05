@@ -57,3 +57,19 @@ POST /finance/batches/receipts/:receiptId/void {reason}
 GET  /audit-logs?action(prefix)&entityType&entityId&actorId&from&to&search · /audit-logs/actions
 GET  /settings          PATCH /settings/:key {value}  (ต้องคงชนิดข้อมูลเดิม)
 ```
+
+## Endpoints (P2c)
+```text
+GET  /finance/batches/:id/export?format=pdf|xlsx              รายงานนำส่ง (แม่แบบ finance.remittanceReportTemplate)
+GET  /finance/cashier-sessions/:id/remittance-document?format=pdf|xlsx   ใบนำส่งเงินสด (หลังปิดกะ; แม่แบบ finance.cashRemittanceTemplate)
+GET  /finance/cashier-sessions/:id/offline-pack · /:id/offline-sheet (PDF)   โหมดออฟไลน์ FIN-12
+POST /finance/cashier-sessions/:id/collect {orderId, capturedAt?}   capturedAt = เวลารับเงินจริงของรายการที่บันทึกออฟไลน์ → 409 OFFLINE_CONFLICT ถ้าใบแจ้งไม่อยู่ในสถานะรอชำระแล้ว
+GET  /finance/reconciliation/accounts · /template (CSV) · /statements?bankAccountId · /lines?bankAccountId&status&search&from&to · /lines/:id/candidates · /report?bankAccountId&from&to
+POST /finance/reconciliation/statements (multipart: bankAccountId, file .csv/.xlsx) · /auto-match {bankAccountId}
+POST /finance/reconciliation/lines/:id/match {paymentId} · /:id/unmatch {reason} · /:id/ignore {reason}     (finance_batch:reconcile)
+POST /events/:id/fee-change {feeRates[], bankAccountId?, incomeCodeId?, reason} · GET /events/:id/fee-change · POST /events/:id/fee-change/cancel
+PATCH /registrations/:id/billing {billing}  · POST /public/registrations/billing {referenceNo, token, billing}   (FIN-9)
+POST /events/:id/registrations {..., billing?: {type: INDIVIDUAL|JURISTIC, name, taxId, branch, address}}
+```
+error code ใหม่: `STATEMENT_DUPLICATE`, `PAYMENT_ALREADY_MATCHED`, `APPROVAL_PENDING`, `OFFLINE_CONFLICT`
+

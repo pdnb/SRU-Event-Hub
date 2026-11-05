@@ -3,12 +3,13 @@
 import { CheckOutlined, CloseOutlined, SearchOutlined } from '@ant-design/icons';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { EventSummaryDto, FinancePaymentRowDto } from '@sru/shared-types';
-import { Alert, Button, Card, Descriptions, Drawer, Empty, Flex, Input, Modal, Popconfirm, Select, Space, Spin, Table, Tabs, Typography } from 'antd';
+import { Alert, Button, Card, Descriptions, Drawer, Empty, Flex, Input, Modal, Popconfirm, Select, Space, Spin, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { Money, ThaiDate } from '@/components/Format';
 import { PageHeader } from '@/components/PageHeader';
 import { ErrorState } from '@/components/QueryState';
 import { StatusTag } from '@/components/StatusTag';
+import { billingLabel } from '@/features/finance/billing';
 import { useApiMessage } from '@/hooks/useApiMessage';
 import { useCan } from '@/hooks/useMe';
 import { api } from '@/services/api';
@@ -145,6 +146,13 @@ export default function FinancePaymentsPage() {
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       {r.referenceNo} · {r.orderNo}
                     </Typography.Text>
+                    {billingLabel(r.billing) && (
+                      <div>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          ใบเสร็จในนาม: {billingLabel(r.billing)}
+                        </Typography.Text>
+                      </div>
+                    )}
                   </>
                 ),
               },
@@ -153,6 +161,20 @@ export default function FinancePaymentsPage() {
               { title: 'วันเวลาที่โอน', dataIndex: 'transferredAt', width: 160, render: (v: string | null) => <ThaiDate value={v} time /> },
               { title: 'ส่งหลักฐานเมื่อ', dataIndex: 'submittedAt', width: 160, render: (v: string) => <ThaiDate value={v} time /> },
               { title: 'สถานะ', dataIndex: 'status', width: 130, render: (v: string) => <StatusTag status={v} kind="payment" /> },
+              {
+                title: 'statement',
+                width: 120,
+                render: (_, r) =>
+                  r.channel !== 'TRANSFER' ? (
+                    '-'
+                  ) : r.statementMatchedAt ? (
+                    <Tooltip title={<>พบยอดเงินเข้าบัญชี <ThaiDate value={r.statementMatchedAt} time /></>}>
+                      <Tag color="green">พบเงินเข้า</Tag>
+                    </Tooltip>
+                  ) : (
+                    <Tag>ยังไม่พบ</Tag>
+                  ),
+              },
               { title: 'ชุดนำส่ง / ใบเสร็จ', width: 170, render: (_, r) => (r.batchNo ? <>{r.batchNo}{r.receiptNo ? <div>{r.receiptNo}</div> : null}</> : '-') },
             ]}
           />

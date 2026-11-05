@@ -6,6 +6,8 @@
  * part in production: set SEED_DEMO=false to load only reference data.
  */
 import { seedFinance, seedFinanceDemo } from './finance';
+import { DEFAULT_BATCH_TEMPLATE, DEFAULT_CASH_TEMPLATE } from '../../src/payments/documents/templates';
+import { DEFAULT_STATEMENT_COLUMNS } from '../../src/payments/reconciliation/statement-parser';
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import * as argon2 from 'argon2';
@@ -115,6 +117,11 @@ async function seedSettings() {
     ['pdpa.consentVersion', '2569-1', 'เวอร์ชันข้อความยินยอม PDPA ปัจจุบัน'],
     ['finance.submissionLeadDays', 7, 'จำนวนวันก่อนวันจัดกิจกรรมที่ต้องส่งรายงานนำส่งกองคลัง (รอยืนยันกับกองคลัง)'],
     ['payment.defaultDueHours', 48, 'ระยะเวลาชำระเงินหลังลงทะเบียน (ชั่วโมง)'],
+    // P2c — placeholders until กองคลัง confirms the official forms (FIN-1) and bank formats.
+    ['finance.remittanceReportTemplate', DEFAULT_BATCH_TEMPLATE, 'แม่แบบรายงานนำส่งเงิน (PDF/Excel) — แบบชั่วคราว รอแบบฟอร์มจริงจากกองคลัง (FIN-1)'],
+    ['finance.cashRemittanceTemplate', DEFAULT_CASH_TEMPLATE, 'แม่แบบใบนำส่งเงินสดของกะรับเงินหน้างาน — แบบชั่วคราว (FIN-1)'],
+    ['finance.statementColumns', DEFAULT_STATEMENT_COLUMNS, 'ชื่อหัวคอลัมน์ของไฟล์ statement ธนาคาร (CSV/XLSX) ที่ใช้กระทบยอด'],
+    ['finance.reconcileToleranceMinutes', 15, 'ช่วงเวลา (นาที) ที่ยอมให้เวลาโอนต่างจากเวลาใน statement เมื่อจับคู่อัตโนมัติ'],
   ];
   for (const [key, value, description] of settings) {
     await prisma.systemSetting.upsert({ where: { key }, create: { key, value: value as never, description }, update: { description } });

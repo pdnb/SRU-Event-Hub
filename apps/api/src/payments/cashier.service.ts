@@ -1,15 +1,20 @@
-import { Injectable } from '@nestjs/common';
-import { bahtText } from '@sru/shared-utils';
+import { HttpStatus, Injectable, StreamableFile } from '@nestjs/common';
+import { bahtText, formatMoney, formatThaiDateTime } from '@sru/shared-utils';
 import type { AuthUser } from '../auth/auth.types';
 import { AccessService } from '../common/access.service';
 import { AuditService } from '../common/audit.service';
 import type { RequestMeta } from '../common/decorators';
-import { Errors } from '../common/errors';
+import { AppError, Errors } from '../common/errors';
 import { moneyIn, moneyOut } from '../common/money';
 import { Paginated } from '../common/pagination';
 import { SequenceService } from '../common/sequence.service';
+import { SettingsService } from '../common/settings.service';
 import { CashierSessionStatus, Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { statusLabel, UNIVERSITY_NAME } from './documents/labels';
+import { renderTablePdf } from './documents/pdf';
+import { CASH_TEMPLATE_KEY, CashColumnKey, DEFAULT_CASH_TEMPLATE, DocumentTemplate, isCashTemplate } from './documents/templates';
+import { renderTableXlsx } from './documents/xlsx';
 import { paymentDueAt } from './fee';
 import { CashierQueryDto, CloseSessionDto, OpenSessionDto, PayablesQueryDto, RemitDto } from './payments.dto';
 import { PaymentsService } from './payments.service';
@@ -20,6 +25,33 @@ const sessionInclude = {
   confirmedBy: { select: { id: true, displayName: true } },
 } satisfies Prisma.CashierSessionInclude;
 type SessionRow = Prisma.CashierSessionGetPayload<{ include: typeof sessionInclude }>;
+
+/** Upper bound of the downloaded offline list (one event's unpaid orders). */
+const OFFLINE_PACK_LIMIT = 5000;
+/** Collections recorded offline must be synced within this window. */
+const OFFLINE_MAX_AGE_MS = 72 * 3600_000;
+
+/** Paper fallback list (not a finance form, so not configurable). */
+const OFFLINE_SHEET_TEMPLATE: DocumentTemplate = {
+  orientation: 'landscape',
+  titleLines: ['บัญชีรายชื่อผู้ค้างชำระ (สำรองกรณีระบบขัดข้อง)', '{eventCode} {eventTitle}'],
+  infoLines: [
+    'กะรับเงิน: {sessionNo}    ผู้รับเงิน: {cashierName}    ข้อมูล ณ {generatedAt}',
+    'บันทึกเวลารับเงินและให้ผู้ชำระลงชื่อทุกรายการ แล้วบันทึกเข้าระบบเมื่อใช้งานได้ (โหมดออฟไลน์ ระบุเวลารับเงินจริง)',
+  ],
+  columns: [
+    { key: 'seq', label: 'ลำดับ', width: 5, align: 'center' },
+    { key: 'referenceNo', label: 'เลขอ้างอิง', width: 14 },
+    { key: 'payerName', label: 'ชื่อผู้ชำระ', width: 24 },
+    { key: 'feeName', label: 'รายการ', width: 14 },
+    { key: 'amount', label: 'จำนวนเงิน', width: 10, align: 'right' },
+    { key: 'time', label: 'เวลารับเงิน', width: 10 },
+    { key: 'sign', label: 'ลายมือชื่อผู้ชำระ', width: 18 },
+  ],
+  totalLabel: 'รวมยอดค้างชำระ',
+  footerNotes: ['จำนวน {count} รายการ'],
+  signatures: ['ผู้รับเงิน', 'ผู้ตรวจสอบ'],
+};
 
 /**
  * กะรับเงินหน้างาน (spec §4.7 on-site payment).
@@ -40,6 +72,7 @@ export class CashierService {
     private readonly audit: AuditService,
     private readonly seq: SequenceService,
     private readonly payments: PaymentsService,
+    private readonly settings: SettingsService,
   ) {}
 
   async open(dto: OpenSessionDto, user: AuthUser, meta: RequestMeta) {
@@ -99,6 +132,7 @@ export class CashierService {
         payerName: p.order.payerName,
         referenceNo: p.order.registration?.referenceNo ?? null,
         voidReason: p.voidReason,
+        capturedOfflineAt: p.capturedOfflineAt?.toISOString() ?? null,
       })),
     };
   }
@@ -139,11 +173,20 @@ export class CashierService {
     }));
   }
 
-  /** Receive cash for one order. The amount is the order's snapshot – the cashier never types it. */
-  async collect(id: string, orderId: string, user: AuthUser, meta: RequestMeta) {
+  /**
+   * Receive cash for one order. The amount is the order's snapshot – the cashier never types it.
+   *
+   * FIN-12 offline capture: without network the page queues the collection (with its
+   * Idempotency-Key and the order snapshot it downloaded) and syncs later with `capturedAt` = when
+   * the cash was taken. All checks run again at sync time; if the order is no longer payable (paid
+   * by transfer meanwhile, expired, cancelled) the sync fails with OFFLINE_CONFLICT and finance
+   * settles that cash by hand.
+   */
+  async collect(id: string, orderId: string, user: AuthUser, meta: RequestMeta, capturedAt?: string) {
     const s = await this.load(id, user);
     if (s.cashierId !== user.id) throw Errors.forbidden('รับเงินได้เฉพาะในกะของตนเอง');
     if (s.status !== 'OPEN') throw Errors.invalidState('กะรับเงินนี้ปิดแล้ว');
+    const offlineAt = capturedAt ? this.checkCapturedAt(new Date(capturedAt), s.openedAt) : null;
     const head = await this.prisma.paymentOrder.findUnique({ where: { id: orderId }, include: { registration: true } });
     if (!head || head.eventId !== s.eventId) throw Errors.notFound('ใบแจ้งชำระของกิจกรรมนี้');
     if (head.registration?.userId === user.id) throw Errors.forbidden('ไม่สามารถรับชำระเงินของตนเองได้ (การแบ่งแยกหน้าที่)');
@@ -158,6 +201,13 @@ export class CashierService {
         tx.paymentOrder.findUniqueOrThrow({ where: { id: orderId } }),
       ]);
       if (session.status !== 'OPEN') throw Errors.invalidState('กะรับเงินนี้ปิดแล้ว');
+      if (offlineAt && order.status !== 'UNPAID') {
+        throw new AppError(
+          'OFFLINE_CONFLICT',
+          `บันทึกรายการออฟไลน์ไม่ได้: ใบแจ้งชำระ ${order.orderNo} อยู่ในสถานะ "${statusLabel(order.status)}" แล้ว — ส่งเรื่องให้การเงินดำเนินการกับเงินสดที่รับไว้`,
+          HttpStatus.CONFLICT,
+        );
+      }
       if (order.status === 'PENDING_VERIFICATION') throw Errors.invalidState('รายการนี้มีหลักฐานการโอนรอตรวจสอบอยู่ กรุณาให้การเงินตรวจสอบก่อน');
       if (order.status !== 'UNPAID') throw Errors.invalidState('รายการนี้ไม่อยู่ในสถานะรอชำระ');
 
@@ -172,8 +222,9 @@ export class CashierService {
           submittedById: user.id,
           verifiedById: user.id,
           verifiedAt: now,
-          transferredAt: now,
+          transferredAt: offlineAt ?? now,
           cashierSessionId: id,
+          capturedOfflineAt: offlineAt,
         },
       });
       await tx.paymentLedgerEntry.create({ data: { orderId, paymentId: p.id, entryType: 'PAYMENT', amount: order.amount.negated(), reason: `รับเงินสดหน้างาน ${session.sessionNo}`, createdById: user.id } });
@@ -184,7 +235,17 @@ export class CashierService {
           data: { status: 'CONFIRMED', confirmedAt: now, paymentDueAt: null, version: { increment: 1 } },
         });
       }
-      await this.audit.log({ actorId: user.id, action: 'cashier.collect', entityType: 'payment', entityId: p.id, after: { sessionNo: session.sessionNo, orderNo: order.orderNo, amount: order.amount.toFixed(2) }, meta }, tx);
+      await this.audit.log(
+        {
+          actorId: user.id,
+          action: 'cashier.collect',
+          entityType: 'payment',
+          entityId: p.id,
+          after: { sessionNo: session.sessionNo, orderNo: order.orderNo, amount: order.amount.toFixed(2), ...(offlineAt ? { capturedOfflineAt: offlineAt.toISOString() } : {}) },
+          meta,
+        },
+        tx,
+      );
       return p;
     });
     return { ...this.payments.paymentDto(payment), orderNo: head.orderNo, payerName: head.payerName, referenceNo: head.registration?.referenceNo ?? null, amountText: bahtText(moneyOut(payment.amount)!) };
@@ -262,7 +323,134 @@ export class CashierService {
     return this.transition(id, 'REMITTED', 'CONFIRMED', user, meta, { confirmedById: user.id, confirmedAt: new Date() });
   }
 
+  /**
+   * FIN-12: everything the cash point needs to keep collecting without network — every unpaid
+   * order of the event with its fixed amount. The page keeps it locally and refreshes it online.
+   */
+  async offlinePack(id: string, user: AuthUser) {
+    const s = await this.load(id, user);
+    if (s.cashierId !== user.id) throw Errors.forbidden('ดาวน์โหลดได้เฉพาะผู้รับเงินของกะ');
+    if (s.status !== 'OPEN') throw Errors.invalidState('กะรับเงินนี้ปิดแล้ว');
+    const orders = await this.prisma.paymentOrder.findMany({
+      where: { eventId: s.eventId, status: 'UNPAID' },
+      include: { registration: { select: { referenceNo: true, phone: true } } },
+      orderBy: { createdAt: 'asc' },
+      take: OFFLINE_PACK_LIMIT,
+    });
+    return {
+      sessionId: s.id,
+      sessionNo: s.sessionNo,
+      eventId: s.eventId,
+      eventCode: s.event.code,
+      eventTitle: s.event.titleTh,
+      cashierName: s.cashier.displayName,
+      generatedAt: new Date().toISOString(),
+      truncated: orders.length === OFFLINE_PACK_LIMIT,
+      payables: orders.map((o) => ({
+        orderId: o.id,
+        orderNo: o.orderNo,
+        referenceNo: o.registration?.referenceNo ?? null,
+        payerName: o.payerName,
+        payerEmail: o.payerEmail,
+        phone: o.registration?.phone ?? null,
+        feeName: (o.feeSnapshot as { nameTh?: string }).nameTh ?? '',
+        amount: moneyOut(o.amount)!,
+        dueAt: o.dueAt.toISOString(),
+      })),
+    };
+  }
+
+  /** Paper fallback (FIN-12) printed before the event in case the device itself fails. */
+  async offlineSheet(id: string, user: AuthUser, meta: RequestMeta) {
+    const pack = await this.offlinePack(id, user);
+    const total = pack.payables.reduce((a, p) => a.plus(p.amount), new Prisma.Decimal(0));
+    const body = await renderTablePdf({
+      template: OFFLINE_SHEET_TEMPLATE,
+      vars: {
+        eventCode: pack.eventCode,
+        eventTitle: pack.eventTitle,
+        sessionNo: pack.sessionNo,
+        cashierName: pack.cashierName,
+        generatedAt: formatThaiDateTime(pack.generatedAt),
+        count: pack.payables.length,
+        printedAt: formatThaiDateTime(new Date()),
+      },
+      rows: pack.payables.map((p, i) => ({ seq: String(i + 1), referenceNo: p.referenceNo ?? p.orderNo, payerName: p.payerName, feeName: p.feeName, amount: formatMoney(p.amount), time: '', sign: '' })),
+      total: formatMoney(total.toFixed(2)),
+      title: `รายชื่อสำรอง ${pack.sessionNo}`,
+    });
+    await this.audit.log({ actorId: user.id, action: 'cashier.offline_sheet', entityType: 'cashier_session', entityId: id, after: { count: pack.payables.length }, meta });
+    return new StreamableFile(body, { type: 'application/pdf', disposition: `attachment; filename="${pack.sessionNo}-offline.pdf"` });
+  }
+
+  /** ใบนำส่งเงินสด of a closed session (FIN-1, template `finance.cashRemittanceTemplate`). */
+  async remittanceDocument(id: string, format: 'pdf' | 'xlsx', user: AuthUser, meta: RequestMeta) {
+    const s = await this.load(id, user);
+    if (s.status === 'OPEN') throw Errors.invalidState('พิมพ์ใบนำส่งเงินได้หลังปิดกะแล้ว');
+    const template = await this.settings.get(CASH_TEMPLATE_KEY, DEFAULT_CASH_TEMPLATE, isCashTemplate);
+    const payments = await this.prisma.payment.findMany({
+      where: { cashierSessionId: id, status: 'VERIFIED' },
+      include: { order: { include: { registration: { select: { referenceNo: true } } } } },
+      orderBy: { submittedAt: 'asc' },
+    });
+    const total = s.expectedAmount ?? new Prisma.Decimal(0);
+    const diff = s.countedAmount && s.expectedAmount ? s.countedAmount.minus(s.expectedAmount) : null;
+    const money = (d: Prisma.Decimal | null) => (d ? formatMoney(d.toFixed(2)) : null);
+    const vars = {
+      universityName: UNIVERSITY_NAME,
+      sessionNo: s.sessionNo,
+      status: s.status,
+      statusLabel: statusLabel(s.status, 'cashier'),
+      remittanceNo: s.remittanceNo,
+      eventCode: s.event.code,
+      eventTitle: s.event.titleTh,
+      cashierName: s.cashier.displayName,
+      openedAt: formatThaiDateTime(s.openedAt),
+      closedAt: s.closedAt ? formatThaiDateTime(s.closedAt) : null,
+      expectedAmount: money(total),
+      countedAmount: money(s.countedAmount),
+      difference: money(diff),
+      closeNote: s.closeNote,
+      confirmedBy: s.confirmedBy?.displayName ?? null,
+      itemCount: payments.length,
+      total: money(total),
+      totalText: bahtText(total.toFixed(2)),
+      printedAt: formatThaiDateTime(new Date()),
+    };
+    const rows = payments.map(
+      (p, i): Record<CashColumnKey, string> => ({
+        seq: String(i + 1),
+        paymentNo: p.paymentNo,
+        orderNo: p.order.orderNo,
+        referenceNo: p.order.registration?.referenceNo ?? '',
+        payerName: p.order.payerName,
+        collectedAt: formatThaiDateTime(p.transferredAt ?? p.submittedAt) + (p.capturedOfflineAt ? ' (ออฟไลน์)' : ''),
+        status: statusLabel(p.status, 'payment'),
+        amount: formatMoney(p.amount.toFixed(2)),
+      }),
+    );
+    const body =
+      format === 'pdf'
+        ? await renderTablePdf({ template, vars, rows, total: money(total)!, title: `ใบนำส่งเงิน ${s.sessionNo}` })
+        : await renderTableXlsx({ template, vars, rows: rows.map((r, i) => ({ ...r, amount: Number(payments[i]!.amount) })), total: Number(total), sheetName: 'ใบนำส่งเงิน' });
+    await this.audit.log({ actorId: user.id, action: 'cashier.remittance_document', entityType: 'cashier_session', entityId: id, after: { format }, meta });
+    return new StreamableFile(body, {
+      type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="${s.sessionNo}.${format}"`,
+    });
+  }
+
   // ───────────── helpers ─────────────
+
+  /** An offline time must fall inside the session and within the sync window. */
+  private checkCapturedAt(at: Date, openedAt: Date) {
+    const now = Date.now();
+    if (Number.isNaN(at.getTime())) throw Errors.validation('เวลาที่รับเงินไม่ถูกต้อง');
+    if (at.getTime() > now + 2 * 60_000) throw Errors.validation('เวลาที่รับเงินอยู่ในอนาคต');
+    if (at < openedAt) throw Errors.validation('เวลาที่รับเงินอยู่ก่อนเปิดกะ');
+    if (now - at.getTime() > OFFLINE_MAX_AGE_MS) throw Errors.validation('รายการออฟไลน์เก่าเกิน 72 ชั่วโมง กรุณาส่งเรื่องให้การเงินบันทึก');
+    return at;
+  }
 
   private async transition(id: string, from: CashierSessionStatus, to: CashierSessionStatus, user: AuthUser, meta: RequestMeta, data: Prisma.CashierSessionUncheckedUpdateManyInput) {
     return this.prisma.$transaction(async (tx) => {

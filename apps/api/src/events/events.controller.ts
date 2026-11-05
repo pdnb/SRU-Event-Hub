@@ -7,6 +7,7 @@ import {
   AdminEventQueryDto,
   CommentDto,
   CreateEventDto,
+  FeeChangeDto,
   PublicEventQueryDto,
   ReasonDto,
   RequiredCommentDto,
@@ -105,6 +106,26 @@ export class EventsController {
   @HttpCode(200)
   returnForEdit(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RequiredCommentDto, @CurrentUser() u: AuthUser, @ReqMeta() m: RequestMeta) {
     return this.approvals.decide(id, 'RETURN', dto.comment, u, m);
+  }
+
+  // ── fee change after approval (FEE_CHANGE) ──
+  @RequirePermissions('event:update')
+  @ApiOperation({ summary: 'ขอแก้ไขอัตราค่าลงทะเบียนหลังอนุมัติ (ต้องอนุมัติใหม่)' })
+  @Post(':id/fee-change')
+  feeChange(@Param('id', ParseUUIDPipe) id: string, @Body() dto: FeeChangeDto, @CurrentUser() u: AuthUser, @ReqMeta() m: RequestMeta) {
+    return this.approvals.requestFeeChange(id, dto, u, m);
+  }
+
+  @Get(':id/fee-change')
+  pendingFeeChange(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser) {
+    return this.approvals.pendingFeeChange(id, u);
+  }
+
+  @RequirePermissions('event:update')
+  @Post(':id/fee-change/cancel')
+  @HttpCode(200)
+  cancelFeeChange(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: AuthUser, @ReqMeta() m: RequestMeta) {
+    return this.approvals.cancelFeeChange(id, u, m);
   }
 
   @Get(':id/approval-history')

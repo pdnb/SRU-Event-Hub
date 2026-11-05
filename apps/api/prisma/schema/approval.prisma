@@ -71,6 +71,10 @@ model ApprovalRequest {
   trigger          ApprovalTrigger @default(INITIAL)
   status           ApprovalStatus  @default(PENDING)
   currentStepOrder Int?            @map("current_step_order")
+  /// FEE_CHANGE: proposed fee rates / receiving account / income code, applied only on final approval.
+  payload          Json?
+  /// Why the change was requested (FEE_CHANGE).
+  reason           String?         @db.VarChar(1000)
   submittedById    String          @map("submitted_by_id") @db.Uuid
   submittedAt      DateTime        @default(now()) @map("submitted_at") @db.Timestamptz(6)
   completedAt      DateTime?       @map("completed_at") @db.Timestamptz(6)

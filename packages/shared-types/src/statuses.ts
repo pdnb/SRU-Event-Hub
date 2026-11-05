@@ -24,6 +24,7 @@ export const ApprovalStatus = {
   APPROVED: 'APPROVED',
   REJECTED: 'REJECTED',
   RETURNED: 'RETURNED',
+  CANCELLED: 'CANCELLED',
 } as const;
 export type ApprovalStatus = (typeof ApprovalStatus)[keyof typeof ApprovalStatus];
 
@@ -147,6 +148,11 @@ export const STATUS_META: Record<string, { label: string; color: string }> = {
   REMITTED: { label: 'นำส่งแล้ว', color: 'blue' },
   // refund
   REQUESTED: { label: 'รอพิจารณา', color: 'gold' },
+  // bank-statement reconciliation
+  UNMATCHED: { label: 'ยังไม่พบรายการ', color: 'red' },
+  AUTO: { label: 'จับคู่อัตโนมัติ', color: 'green' },
+  MANUAL: { label: 'จับคู่โดยเจ้าหน้าที่', color: 'cyan' },
+  IGNORED: { label: 'ไม่เกี่ยวข้อง', color: 'default' },
 };
 
 /** Context-specific labels where the same code means different things (e.g. SUBMITTED). */

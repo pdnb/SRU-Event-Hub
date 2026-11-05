@@ -2,6 +2,7 @@ import axios, { type AxiosError, type AxiosInstance, type AxiosRequestConfig } f
 import type {
   ApiErrorBody,
   AuthUser,
+  BillingInfoDto,
   EventDetailDto,
   EventSummaryDto,
   OrganizationDto,
@@ -136,11 +137,15 @@ export function createApiClient(opts: ClientOptions) {
       /** Guest slip upload (multipart). The token authorises the request. */
       uploadSlip: (referenceNo: string, token: string, file: Blob, opts: { transferredAt?: string; note?: string } = {}) =>
         data<PaymentDto>(http.post('/public/registrations/slip', slipForm(file, { referenceNo, token, ...opts }))),
+      /** FIN-9: who the official receipt is made out to (token-authorised). */
+      saveBilling: (referenceNo: string, token: string, billing: object) =>
+        data<BillingInfoDto>(http.post('/public/registrations/billing', { referenceNo, token, billing })),
     },
     payments: {
       /** Signed-in registrant uploads a slip for their own registration. */
       uploadSlip: (registrationId: string, file: Blob, opts: { transferredAt?: string; note?: string } = {}) =>
         data<PaymentDto>(http.post(`/registrations/${registrationId}/slip`, slipForm(file, opts))),
+      saveBilling: (registrationId: string, billing: object) => data<BillingInfoDto>(http.patch(`/registrations/${registrationId}/billing`, { billing })),
     },
   };
 }

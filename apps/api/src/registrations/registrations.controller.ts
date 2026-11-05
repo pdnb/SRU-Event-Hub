@@ -1,13 +1,15 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser, Idempotent, Public, ReqMeta, RequestMeta, RequirePermissions } from '../common/decorators';
 import type { AuthUser } from '../auth/auth.types';
 import {
+  BillingUpdateDto,
   CancelDto,
   CreateRegistrationDto,
   ExportQueryDto,
   RegistrationQueryDto,
+  TokenBillingDto,
   TokenCancelDto,
   TokenLookupDto,
 } from './registrations.dto';
@@ -63,6 +65,20 @@ export class RegistrationsController {
   @HttpCode(200)
   lookup(@Body() dto: TokenLookupDto) {
     return this.regs.lookupByToken(dto.referenceNo, dto.token);
+  }
+
+  /** FIN-9: who the official receipt is made out to (registrant or the organizer's finance officer). */
+  @Patch('registrations/:id/billing')
+  billing(@Param('id', ParseUUIDPipe) id: string, @Body() dto: BillingUpdateDto, @CurrentUser() u: AuthUser, @ReqMeta() m: RequestMeta) {
+    return this.regs.updateBilling(id, dto.billing, u, m);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('public/registrations/billing')
+  @HttpCode(200)
+  billingByToken(@Body() dto: TokenBillingDto, @ReqMeta() m: RequestMeta) {
+    return this.regs.updateBillingByToken(dto.referenceNo, dto.token, dto.billing, m);
   }
 
   @Public()

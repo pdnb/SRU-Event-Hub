@@ -1,7 +1,6 @@
 import { HttpStatus, Injectable, StreamableFile } from '@nestjs/common';
 import type { FinanceBatchDto } from '@sru/shared-types';
-import { bahtText, fiscalYearBE, formatThaiDate, formatThaiDateTime, sanitizeSpreadsheetCell } from '@sru/shared-utils';
-import ExcelJS from 'exceljs';
+import { bahtText, fiscalYearBE, formatMoney, formatThaiDate, formatThaiDateTime } from '@sru/shared-utils';
 import type { AuthUser } from '../auth/auth.types';
 import { AccessService } from '../common/access.service';
 import { AuditService } from '../common/audit.service';
@@ -10,8 +9,14 @@ import { AppError, Errors } from '../common/errors';
 import { moneyOut } from '../common/money';
 import { Paginated } from '../common/pagination';
 import { SequenceService } from '../common/sequence.service';
+import { SettingsService } from '../common/settings.service';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService, Tx } from '../prisma/prisma.service';
+import { billingDto, billingText } from './billing';
+import { statusLabel, UNIVERSITY_NAME } from './documents/labels';
+import { renderTablePdf } from './documents/pdf';
+import { BATCH_TEMPLATE_KEY, BatchColumnKey, DEFAULT_BATCH_TEMPLATE, isBatchTemplate } from './documents/templates';
+import { renderTableXlsx } from './documents/xlsx';
 import { BatchQueryDto, CreateBatchDto, RecordReceiptsDto } from './payments.dto';
 
 const batchInclude = {
@@ -47,6 +52,7 @@ export class FinanceBatchesService {
     private readonly access: AccessService,
     private readonly audit: AuditService,
     private readonly seq: SequenceService,
+    private readonly settings: SettingsService,
   ) {}
 
   /** Verified payments of an event that are not yet in a live batch. */
@@ -165,6 +171,7 @@ export class FinanceBatchesService {
           ? { id: i.payment.receipts[0].id, bookNo: i.payment.receipts[0].bookNo, receiptNo: i.payment.receipts[0].receiptNo, issuedAt: i.payment.receipts[0].issuedAt.toISOString().slice(0, 10) }
           : null,
         channel: i.payment.channel,
+        billing: billingDto(i.payment.order),
       })),
     };
   }
@@ -246,64 +253,75 @@ export class FinanceBatchesService {
     }
   }
 
-  /** รายงานนำส่งเงิน (Excel). PDF with the official form comes with FIN-1 templates (P2b). */
-  async export(id: string, user: AuthUser, meta: RequestMeta) {
+  /**
+   * รายงานนำส่งเงิน (FIN-1) as PDF or Excel. Both render the configurable template in
+   * system_settings `finance.remittanceReportTemplate`; a DRAFT batch is watermarked "ฉบับร่าง".
+   */
+  async export(id: string, format: 'pdf' | 'xlsx', user: AuthUser, meta: RequestMeta) {
     const b = await this.load(id, user, 'finance_batch:export');
     const d = await this.detail(id, user);
     const items = d.items.filter((i) => i.isActive || b.status === 'RETURNED');
-
-    const wb = new ExcelJS.Workbook();
-    wb.creator = 'SRU Event Hub';
-    const ws = wb.addWorksheet('รายงานนำส่ง', { pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
-    const font = { name: 'TH Sarabun New', size: 14 };
-    const head = (text: string, bold = false) => {
-      const row = ws.addRow([text]);
-      row.font = { ...font, bold, size: bold ? 16 : 14 };
-      ws.mergeCells(row.number, 1, row.number, 9);
-      row.alignment = { horizontal: bold ? 'center' : 'left' };
+    const template = await this.settings.get(BATCH_TEMPLATE_KEY, DEFAULT_BATCH_TEMPLATE, isBatchTemplate);
+    const event = await this.prisma.event.findUniqueOrThrow({ where: { id: b.eventId }, include: { bankAccount: true, incomeCode: true } });
+    const vars = {
+      universityName: UNIVERSITY_NAME,
+      organizationName: b.organization.nameTh,
+      batchNo: b.batchNo,
+      status: b.status,
+      statusLabel: statusLabel(b.status, 'batch'),
+      fiscalYear: fiscalYearBE(b.createdAt),
+      eventCode: b.event.code,
+      eventTitle: b.event.titleTh,
+      eventDate: formatThaiDate(b.event.startAt, 'long'),
+      bankAccount: event.bankAccount ? `${event.bankAccount.bankName} ${event.bankAccount.accountNo} (${event.bankAccount.accountName})` : null,
+      incomeCode: event.incomeCode ? `${event.incomeCode.code} ${event.incomeCode.nameTh}` : null,
+      createdBy: b.createdBy.displayName,
+      createdAt: formatThaiDateTime(b.createdAt),
+      submittedAt: b.submittedAt ? formatThaiDateTime(b.submittedAt) : null,
+      receivedBy: b.receivedBy?.displayName ?? null,
+      receivedAt: b.receivedAt ? formatThaiDateTime(b.receivedAt) : null,
+      itemCount: items.length,
+      total: formatMoney(d.totalAmount),
+      totalText: d.totalAmountText,
+      note: b.note,
+      printedAt: formatThaiDateTime(new Date()),
     };
-    head('รายงานการนำส่งเงินรายได้ค่าลงทะเบียนกิจกรรม', true);
-    head(`มหาวิทยาลัยราชภัฏสุราษฎร์ธานี — ${b.organization.nameTh}`, true);
-    head(`เลขที่ชุดนำส่ง: ${b.batchNo}    สถานะ: ${b.status}`);
-    head(`กิจกรรม: ${b.event.code} ${b.event.titleTh}    วันที่จัด: ${formatThaiDate(b.event.startAt, 'long')}`);
-    head(`จัดทำโดย: ${b.createdBy.displayName}    วันที่จัดทำ: ${formatThaiDateTime(b.createdAt)}`);
-    ws.addRow([]);
-    const header = ws.addRow(['ลำดับ', 'เลขที่รายการชำระ', 'เลขที่ใบแจ้งชำระ', 'เลขอ้างอิงการลงทะเบียน', 'ชื่อผู้ชำระ', 'วันที่โอน', 'วันที่ตรวจสอบ', 'จำนวนเงิน (บาท)', 'เล่มที่/เลขที่ใบเสร็จ']);
-    header.font = { ...font, bold: true };
-    header.eachCell((c) => {
-      c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
-      c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    const cells = (i: (typeof items)[number], idx: number): Record<BatchColumnKey, string> => ({
+      seq: String(idx + 1),
+      paymentNo: i.paymentNo,
+      orderNo: i.orderNo,
+      referenceNo: i.referenceNo ?? '',
+      payerName: i.payerName,
+      billing: billingText(i.billing),
+      channel: i.channel === 'ONSITE' ? 'เงินสด' : 'โอน',
+      transferredAt: i.transferredAt ? formatThaiDateTime(i.transferredAt) : '',
+      verifiedAt: i.verifiedAt ? formatThaiDateTime(i.verifiedAt) : '',
+      incomeCode: event.incomeCode?.code ?? '',
+      amount: formatMoney(i.amount ?? '0'),
+      receipt: i.receipt ? `${i.receipt.bookNo}/${i.receipt.receiptNo}` : '',
     });
-    items.forEach((i, idx) => {
-      const row = ws.addRow(
-        [
-          idx + 1,
-          i.paymentNo,
-          i.orderNo,
-          i.referenceNo ?? '',
-          i.payerName,
-          i.transferredAt ? formatThaiDateTime(i.transferredAt) : '',
-          i.verifiedAt ? formatThaiDateTime(i.verifiedAt) : '',
-          Number(i.amount),
-          i.receipt ? `${i.receipt.bookNo}/${i.receipt.receiptNo}` : '',
-        ].map((v) => (typeof v === 'string' ? sanitizeSpreadsheetCell(v) : v)),
-      );
-      row.font = font;
-      row.getCell(8).numFmt = '#,##0.00';
-      row.eachCell((c) => (c.border = { left: { style: 'thin' }, right: { style: 'thin' }, bottom: { style: 'hair' } }));
-    });
-    const totalRow = ws.addRow(['', '', '', '', '', '', 'รวมทั้งสิ้น', Number(d.totalAmount), '']);
-    totalRow.font = { ...font, bold: true };
-    totalRow.getCell(8).numFmt = '#,##0.00';
-    head(`(${d.totalAmountText})`);
-    ws.addRow([]);
-    head('ลงชื่อ ........................................ ผู้นำส่ง          ลงชื่อ ........................................ ผู้รับเงิน (กองคลัง)');
-    [6, 18, 18, 20, 30, 18, 18, 16, 20].forEach((w, i) => (ws.getColumn(i + 1).width = w));
 
-    await this.audit.log({ actorId: user.id, action: 'finance_batch.export', entityType: 'finance_batch', entityId: id, after: { format: 'xlsx' }, meta });
-    return new StreamableFile(Buffer.from(await wb.xlsx.writeBuffer()), {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      disposition: `attachment; filename="${b.batchNo}.xlsx"`,
+    const body =
+      format === 'pdf'
+        ? await renderTablePdf({
+            template,
+            vars,
+            rows: items.map(cells),
+            total: formatMoney(d.totalAmount),
+            watermark: b.status === 'DRAFT' ? 'ฉบับร่าง' : b.status === 'RETURNED' ? 'ส่งกลับแก้ไข' : undefined,
+            title: `รายงานนำส่ง ${b.batchNo}`,
+          })
+        : await renderTableXlsx({
+            template,
+            vars,
+            rows: items.map((i, idx) => ({ ...cells(i, idx), amount: Number(i.amount) })),
+            total: Number(d.totalAmount),
+            sheetName: 'รายงานนำส่ง',
+          });
+    await this.audit.log({ actorId: user.id, action: 'finance_batch.export', entityType: 'finance_batch', entityId: id, after: { format }, meta });
+    return new StreamableFile(body, {
+      type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="${b.batchNo}.${format}"`,
     });
   }
 

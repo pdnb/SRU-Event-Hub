@@ -147,6 +147,19 @@ export interface PaymentOrderDto {
   promptPayPayload: string | null;
   /** Latest payment attempt (slip) on this order. */
   latestPayment: PaymentDto | null;
+  /** FIN-9: who the official receipt is made out to. */
+  billing: BillingInfoDto;
+}
+
+/** FIN-9 receipt addressee. INDIVIDUAL = the payer's own name. */
+export interface BillingInfoDto {
+  type: 'INDIVIDUAL' | 'JURISTIC';
+  name: string | null;
+  /** 13 digits. */
+  taxId: string | null;
+  /** '00000' = สำนักงานใหญ่. */
+  branch: string | null;
+  address: string | null;
 }
 
 export interface PaymentDto {
@@ -177,6 +190,9 @@ export interface FinancePaymentRowDto extends PaymentDto {
   verifiedByName: string | null;
   batchNo: string | null;
   receiptNo: string | null;
+  /** Bank-statement credit this transfer was reconciled with (null = not found yet). */
+  statementMatchedAt: string | null;
+  billing: BillingInfoDto;
 }
 
 export interface FinanceBatchDto {

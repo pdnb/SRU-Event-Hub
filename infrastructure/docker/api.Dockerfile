@@ -18,7 +18,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN pnpm --filter "@sru/api^..." build && pnpm --filter @sru/api build
 # Self-contained production bundle with only runtime dependencies.
 # (The generated Prisma client lives under src/ and is compiled into dist/ by nest build.)
-RUN pnpm --filter @sru/api deploy --prod --legacy /out && cp -r apps/api/dist /out/
+RUN pnpm --filter @sru/api deploy --prod --legacy /out && cp -r apps/api/dist /out/ && cp -r apps/api/assets /out/
 
 # Release step: `docker compose run --rm migrate` applies pending migrations (needs the Prisma CLI).
 FROM build AS migrate

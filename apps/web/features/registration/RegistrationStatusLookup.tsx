@@ -91,6 +91,7 @@ export function RegistrationStatusLookup() {
               <PaymentPanel
                 order={r.payment}
                 upload={(file, transferredAt) => api.public.uploadSlip(creds.referenceNo, creds.token, file, { transferredAt })}
+                saveBilling={(b) => api.public.saveBilling(creds.referenceNo, creds.token, b)}
                 onChanged={() => lookup.mutate(creds)}
               />
             </div>

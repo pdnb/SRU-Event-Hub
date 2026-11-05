@@ -6,6 +6,7 @@ import { AuditService } from '../common/audit.service';
 import { CurrentUser, ReqMeta, RequestMeta, RequirePermissions } from '../common/decorators';
 import { Errors } from '../common/errors';
 import { PageQueryDto, Paginated } from '../common/pagination';
+import { SettingsService, validateSetting } from '../common/settings.service';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -77,6 +78,7 @@ export class SettingsController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly settings: SettingsService,
   ) {}
 
   @RequirePermissions('system_setting:view')
@@ -96,7 +98,11 @@ export class SettingsController {
       throw Errors.validation(`ชนิดข้อมูลต้องเป็น ${kind(current.value)} เหมือนค่าเดิม`);
     }
     if (JSON.stringify(dto.value).length > 10_000) throw Errors.validation('ค่าที่ตั้งยาวเกินไป');
+    // Structured settings (document templates, statement columns…) have their own shape rules.
+    const invalid = validateSetting(key, dto.value);
+    if (invalid) throw Errors.validation(invalid);
     const row = await this.prisma.systemSetting.update({ where: { key }, data: { value: dto.value as Prisma.InputJsonValue, updatedById: u.id } });
+    this.settings.invalidate(key);
     await this.audit.log({ actorId: u.id, action: 'setting.update', entityType: 'system_setting', entityId: key, before: { value: current.value }, after: { value: row.value }, meta: m });
     return row;
   }

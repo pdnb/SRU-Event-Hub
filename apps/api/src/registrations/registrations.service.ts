@@ -15,6 +15,7 @@ import { EventsService } from '../events/events.service';
 import { Prisma, Registration, RegistrationStatus } from '../generated/prisma/client';
 import { PrismaService, Tx } from '../prisma/prisma.service';
 import { selectFeeRate } from '../payments/fee';
+import { BillingInputDto } from '../payments/billing';
 import { PaymentsService } from '../payments/payments.service';
 import {
   AnswerDto,
@@ -153,7 +154,7 @@ export class RegistrationsService {
           }
           let order: { id: string; dueAt: Date } | null = null;
           if (status === 'PENDING_PAYMENT' && fee) {
-            order = await this.payments.createOrder(tx, reg, fee, this.eventForOrder(ev), now);
+            order = await this.payments.createOrder(tx, reg, fee, this.eventForOrder(ev), now, dto.billing);
             await tx.registration.update({ where: { id: reg.id }, data: { paymentDueAt: order.dueAt } });
           }
           await this.audit.log(
@@ -443,6 +444,32 @@ export class RegistrationsService {
       out.push({ ...this.toDto(r, r.participantType.code, null), payment: await this.payments.orderForRegistration(r.id), event: r.event });
     }
     return out;
+  }
+
+  // ───────────── FIN-9 receipt addressee ─────────────
+
+  /** Registrant (owner) or a finance officer of the event's organization. */
+  async updateBilling(id: string, billing: BillingInputDto, user: AuthUser, meta: RequestMeta) {
+    const reg = await this.prisma.registration.findUnique({ where: { id }, include: { event: true } });
+    if (!reg) throw Errors.notFound('การลงทะเบียน');
+    if (reg.userId !== user.id) await this.access.assertOrg(user, 'payment:verify', reg.event.organizationId);
+    return this.payments.updateBilling(await this.billableOrderId(reg.id), billing, user.id, meta);
+  }
+
+  async updateBillingByToken(referenceNo: string, token: string, billing: BillingInputDto, meta: RequestMeta) {
+    const reg = await this.findByToken(referenceNo, token);
+    return this.payments.updateBilling(await this.billableOrderId(reg.id), billing, null, meta);
+  }
+
+  /** The order a receipt will be issued for: the live or paid one (not cancelled / expired). */
+  private async billableOrderId(registrationId: string) {
+    const order = await this.prisma.paymentOrder.findFirst({
+      where: { registrationId, status: { notIn: ['CANCELLED', 'EXPIRED'] } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+    if (!order) throw Errors.invalidState('การลงทะเบียนนี้ไม่มีรายการที่ต้องชำระ');
+    return order.id;
   }
 
   // ───────────── helpers ─────────────

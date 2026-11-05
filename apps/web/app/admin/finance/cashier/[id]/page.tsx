@@ -1,11 +1,14 @@
 'use client';
 
-import { CheckCircleOutlined, LockOutlined, PrinterOutlined, SearchOutlined, SendOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, DisconnectOutlined, FilePdfOutlined, LockOutlined, PrinterOutlined, SearchOutlined, SendOutlined, SyncOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { newIdempotencyKey } from '@sru/api-client';
-import { Alert, Button, Card, Col, Descriptions, Empty, Form, Input, Modal, Popconfirm, Row, Skeleton, Space, Statistic, Table, Typography } from 'antd';
+import { bahtText } from '@sru/shared-utils';
+import { Alert, Button, Card, Col, Descriptions, Empty, Form, Input, Modal, Popconfirm, Row, Skeleton, Space, Statistic, Table, Tag, Typography } from 'antd';
 import { List } from '@/components/SimpleList';
-import { use, useState } from 'react';
+import { use, useEffect, useState } from 'react';
+import { isNetworkError, type OfflinePayable, useOfflineCash } from '@/features/finance/offline-cash';
+import { downloadFile } from '@/services/download';
 import { Money, ThaiDate } from '@/components/Format';
 import { PageHeader } from '@/components/PageHeader';
 import { ErrorState } from '@/components/QueryState';
@@ -24,7 +27,10 @@ interface Collected {
   payerName: string;
   referenceNo: string | null;
   submittedAt: string;
+  /** Recorded while offline: not yet on the server. */
+  offline?: boolean;
 }
+type PayableItem = OfflinePayable & { payerEmail?: string };
 
 /** Proof of payment slip for the payer (explicitly NOT an official receipt). */
 function ProofOfPayment({ p, session }: { p: Collected; session: Detail }) {
@@ -37,7 +43,7 @@ function ProofOfPayment({ p, session }: { p: Collected; session: Detail }) {
         (ไม่ใช่ใบเสร็จรับเงิน — ใบเสร็จออกโดยกองคลัง มหาวิทยาลัยราชภัฏสุราษฎร์ธานี)
       </Typography.Paragraph>
       <Descriptions column={1} size="small" bordered>
-        <Descriptions.Item label="เลขที่รายการ">{p.paymentNo}</Descriptions.Item>
+        <Descriptions.Item label="เลขที่รายการ">{p.offline ? 'บันทึกขณะออฟไลน์ — เลขที่รายการจะออกเมื่อส่งข้อมูลเข้าระบบ' : p.paymentNo}</Descriptions.Item>
         <Descriptions.Item label="กิจกรรม">{session.eventCode} {session.eventTitle}</Descriptions.Item>
         <Descriptions.Item label="ผู้ชำระ">{p.payerName}</Descriptions.Item>
         <Descriptions.Item label="เลขอ้างอิง / ใบแจ้งชำระ">{p.referenceNo} / {p.orderNo}</Descriptions.Item>
@@ -70,27 +76,73 @@ export default function CashierSessionPage({ params }: { params: Promise<{ id: s
   const q = useQuery({ queryKey: ['cashier-session', id], queryFn: () => api.get<Detail>(`/finance/cashier-sessions/${id}`) });
   const s = q.data;
   const mine = !!s && s.cashierId === me.data?.id;
+  const collecting = !!s && s.status === 'OPEN' && mine;
+  const offline = useOfflineCash(id, collecting);
   const payables = useQuery({
     queryKey: ['cashier-payables', id, search],
     queryFn: () => api.get<PayableDto[]>(`/finance/cashier-sessions/${id}/payables`, { search: search || undefined }),
-    enabled: !!s && s.status === 'OPEN' && mine,
+    enabled: collecting && offline.online,
   });
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ['cashier-session', id] });
     void qc.invalidateQueries({ queryKey: ['cashier-payables', id] });
     void qc.invalidateQueries({ queryKey: ['cashier-sessions'] });
   };
+  const pending = offline.queue.filter((i) => i.state === 'pending').length;
+  const failed = offline.queue.filter((i) => i.state === 'failed');
 
-  // One key per order click: a double tap or network retry replays instead of charging twice.
-  const collect = useMutation({
-    mutationFn: (orderId: string) =>
-      api.post<Collected>(`/finance/cashier-sessions/${id}/collect`, { orderId }, { headers: { 'Idempotency-Key': newIdempotencyKey() } }),
-    onSuccess: (p) => {
-      setCollected(p);
+  const sync = useMutation({
+    mutationFn: () => offline.sync(),
+    onSuccess: (r) => {
+      if (r.synced) msg.success(`ส่งข้อมูลรายการออฟไลน์แล้ว ${r.synced} รายการ`);
+      if (r.failed) msg.error(new Error(`มี ${r.failed} รายการที่ระบบไม่รับ — ส่งเรื่องให้การเงินดำเนินการ`));
       refresh();
     },
     onError: msg.error,
   });
+  // Network back → replay the queue automatically.
+  useEffect(() => {
+    if (collecting && offline.online && pending && !offline.syncing) sync.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collecting, offline.online, pending]);
+  // The local copy holds personal data: drop it once the session is closed and nothing is queued.
+  useEffect(() => {
+    if (s && s.status !== 'OPEN' && !offline.queue.length) offline.clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s?.status, offline.queue.length]);
+
+  const offlineProof = (p: PayableItem, capturedAt: string): Collected => ({
+    paymentNo: '',
+    amount: p.amount,
+    amountText: bahtText(p.amount),
+    orderNo: p.orderNo,
+    payerName: p.payerName,
+    referenceNo: p.referenceNo,
+    submittedAt: capturedAt,
+    offline: true,
+  });
+
+  // One key per order click: a double tap or network retry replays instead of charging twice.
+  // Without network the collection is queued with that same key (FIN-12) and synced later.
+  const collect = useMutation({
+    mutationFn: async (p: PayableItem) => {
+      const key = newIdempotencyKey();
+      if (!navigator.onLine) return offlineProof(p, offline.enqueue(p, key).capturedAt);
+      try {
+        return await api.post<Collected>(`/finance/cashier-sessions/${id}/collect`, { orderId: p.orderId }, { headers: { 'Idempotency-Key': key } });
+      } catch (e) {
+        // The request may or may not have reached the server: queue it with the same key.
+        if (isNetworkError(e)) return offlineProof(p, offline.enqueue(p, key).capturedAt);
+        throw e;
+      }
+    },
+    onSuccess: (p) => {
+      setCollected(p);
+      if (!p.offline) refresh();
+    },
+    onError: msg.error,
+  });
+  const list: PayableItem[] | undefined = offline.online ? payables.data : offline.localPayables(search);
   const close = useMutation({
     mutationFn: () => api.post(`/finance/cashier-sessions/${id}/close`, { countedAmount: counted, note: note || undefined }),
     onSuccess: () => { msg.success('ปิดกะแล้ว'); setClosing(false); refresh(); },
@@ -125,8 +177,18 @@ export default function CashierSessionPage({ params }: { params: Promise<{ id: s
         actions={
           <Space wrap>
             {s.status === 'OPEN' && mine && (
-              <Button icon={<LockOutlined />} onClick={() => { setCounted(''); setNote(''); setClosing(true); }}>
+              <Button icon={<PrinterOutlined />} disabled={!offline.online} onClick={() => downloadFile(`/finance/cashier-sessions/${id}/offline-sheet`, `${s.sessionNo}-offline.pdf`).catch(msg.error)}>
+                รายชื่อสำรอง (กระดาษ)
+              </Button>
+            )}
+            {s.status === 'OPEN' && mine && (
+              <Button icon={<LockOutlined />} disabled={!!offline.queue.length} title={offline.queue.length ? 'ส่งข้อมูลรายการออฟไลน์ให้ครบก่อนปิดกะ' : undefined} onClick={() => { setCounted(''); setNote(''); setClosing(true); }}>
                 ปิดกะ / นับเงิน
+              </Button>
+            )}
+            {s.status !== 'OPEN' && (
+              <Button icon={<FilePdfOutlined />} onClick={() => downloadFile(`/finance/cashier-sessions/${id}/remittance-document`, `${s.sessionNo}.pdf`, { format: 'pdf' }).catch(msg.error)}>
+                ใบนำส่งเงิน (PDF)
               </Button>
             )}
             {s.status === 'CLOSED' && (mine || can('cashier:approve')) && (
@@ -161,8 +223,44 @@ export default function CashierSessionPage({ params }: { params: Promise<{ id: s
         </Card>
       )}
 
+      {mine && (!offline.online || offline.queue.length > 0) && (
+        <Alert
+          style={{ marginTop: 16 }}
+          type={offline.online ? (failed.length ? 'error' : 'warning') : 'warning'}
+          showIcon
+          icon={offline.online ? <SyncOutlined spin={offline.syncing} /> : <DisconnectOutlined />}
+          title={
+            offline.online
+              ? `มีรายการที่บันทึกขณะออฟไลน์ ${offline.queue.length} รายการ${failed.length ? ` (ระบบไม่รับ ${failed.length})` : ''}`
+              : 'ไม่มีการเชื่อมต่อเครือข่าย — โหมดออฟไลน์'
+          }
+          description={
+            <>
+              {!offline.online && (
+                <div>
+                  รับเงินต่อได้จากรายชื่อที่ดาวน์โหลดไว้
+                  {offline.pack ? <> (ข้อมูล ณ <ThaiDate value={offline.pack.generatedAt} time />)</> : ' — ยังไม่มีรายชื่อในเครื่อง ใช้รายชื่อสำรองแบบกระดาษ'}
+                  {' '}ระบบจะส่งข้อมูลให้อัตโนมัติเมื่อเชื่อมต่อได้ · รอส่ง {pending} รายการ
+                </div>
+              )}
+              {failed.map((f) => (
+                <div key={f.key} style={{ marginTop: 4 }}>
+                  <Typography.Text type="danger">
+                    {f.payerName} <Money value={f.amount} /> (<ThaiDate value={f.capturedAt} time />): {f.error}
+                  </Typography.Text>{' '}
+                  <Popconfirm title="นำออกจากรายการ?" description="ทำเมื่อการเงินดำเนินการกับเงินสดรายการนี้แล้ว (เช่น คืนเงินผู้ชำระ)" okText="นำออก" cancelText="ยกเลิก" onConfirm={() => offline.dismiss(f.key)}>
+                    <Button size="small" type="link">ดำเนินการแล้ว</Button>
+                  </Popconfirm>
+                </div>
+              ))}
+            </>
+          }
+          action={offline.online && pending > 0 ? <Button size="small" loading={sync.isPending} onClick={() => sync.mutate()}>ส่งข้อมูลตอนนี้</Button> : undefined}
+        />
+      )}
+
       {s.status === 'OPEN' && mine && (
-        <Card title="รับชำระ" style={{ marginTop: 16 }}>
+        <Card title={<>รับชำระ {!offline.online && <Tag color="orange">ออฟไลน์</Tag>}</>} style={{ marginTop: 16 }}>
           <Input.Search
             allowClear
             enterButton={<SearchOutlined />}
@@ -170,9 +268,9 @@ export default function CashierSessionPage({ params }: { params: Promise<{ id: s
             onSearch={(v) => setSearch(v.trim())}
             style={{ maxWidth: 520, marginBottom: 12 }}
           />
-          <List<PayableDto>
-            loading={payables.isFetching}
-            dataSource={payables.data}
+          <List<PayableItem>
+            loading={offline.online && payables.isFetching}
+            dataSource={list}
             locale={{ emptyText: <Empty description="ไม่พบรายการที่รอชำระ" /> }}
             renderItem={(p) => (
               <List.Item
@@ -183,15 +281,15 @@ export default function CashierSessionPage({ params }: { params: Promise<{ id: s
                     description={`${p.payerName} · ${p.feeName}`}
                     okText="รับเงินแล้ว"
                     cancelText="ยกเลิก"
-                    onConfirm={() => collect.mutate(p.orderId)}
+                    onConfirm={() => collect.mutate(p)}
                   >
-                    <Button type="primary" loading={collect.isPending && collect.variables === p.orderId}>รับเงิน</Button>
+                    <Button type="primary" loading={collect.isPending && collect.variables?.orderId === p.orderId}>รับเงิน</Button>
                   </Popconfirm>,
                 ]}
               >
                 <List.Item.Meta
                   title={<>{p.payerName} <Typography.Text type="secondary">({p.referenceNo})</Typography.Text></>}
-                  description={<>{p.feeName} · <Money value={p.amount} /> · {p.payerEmail}</>}
+                  description={<>{p.feeName} · <Money value={p.amount} />{p.payerEmail ? ` · ${p.payerEmail}` : ''}</>}
                 />
               </List.Item>
             )}
@@ -209,7 +307,16 @@ export default function CashierSessionPage({ params }: { params: Promise<{ id: s
             { title: 'เลขที่รายการ', dataIndex: 'paymentNo', width: 150 },
             { title: 'ผู้ชำระ', render: (_, p) => <>{p.payerName}<div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{p.referenceNo}</Typography.Text></div></> },
             { title: 'จำนวนเงิน', dataIndex: 'amount', align: 'right', width: 130, render: (v: string) => <Money value={v} /> },
-            { title: 'เวลา', dataIndex: 'submittedAt', width: 160, render: (v: string) => <ThaiDate value={v} time /> },
+            {
+              title: 'เวลา',
+              width: 170,
+              render: (_, p) => (
+                <>
+                  <ThaiDate value={p.capturedOfflineAt ?? p.submittedAt} time />
+                  {p.capturedOfflineAt && <div><Tag color="orange">บันทึกออฟไลน์</Tag></div>}
+                </>
+              ),
+            },
             { title: 'สถานะ', width: 200, render: (_, p) => <><StatusTag status={p.status} kind="payment" />{p.voidReason && <div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{p.voidReason}</Typography.Text></div>}</> },
             {
               title: '',

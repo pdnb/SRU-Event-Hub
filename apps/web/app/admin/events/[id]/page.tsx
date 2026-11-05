@@ -11,6 +11,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { QueryState } from '@/components/QueryState';
 import { StatusTag } from '@/components/StatusTag';
 import { EDITABLE, POST_APPROVAL_EDITABLE, type AdminEventDto } from '@/features/events/admin-event';
+import { FeeChangeDialog, FeeComparison, type PendingFeeChange } from '@/features/events/FeeChange';
 import { RegistrationsTable } from '@/features/registration/RegistrationsTable';
 import { useApiMessage } from '@/hooks/useApiMessage';
 import { useCan, useMe } from '@/hooks/useMe';
@@ -47,9 +48,19 @@ export default function AdminEventDetailPage() {
   const msg = useApiMessage();
   const { modal } = App.useApp();
   const [dialog, setDialog] = useState<null | 'reject' | 'return' | 'cancel' | 'reschedule' | 'approve'>(null);
+  const [feeDialog, setFeeDialog] = useState(false);
   const [form] = Form.useForm();
 
   const ev = useQuery({ queryKey: ['admin-event', id], queryFn: () => api.get<AdminEventDto>(`/events/${id}`) });
+  const feeChange = useQuery({ queryKey: ['fee-change', id], queryFn: () => api.get<PendingFeeChange | null>(`/events/${id}/fee-change`) });
+  const cancelFeeChange = useMutation({
+    mutationFn: () => api.post(`/events/${id}/fee-change/cancel`),
+    onSuccess: () => {
+      msg.success('ถอนคำขอแก้ไขอัตราแล้ว');
+      refresh();
+    },
+    onError: msg.error,
+  });
   const approvals = useQuery({ queryKey: ['approval-history', id], queryFn: () => api.get<ApprovalRound[]>(`/events/${id}/approval-history`) });
   const history = useQuery({
     queryKey: ['status-history', id],
@@ -57,7 +68,7 @@ export default function AdminEventDetailPage() {
   });
 
   const refresh = () => {
-    for (const k of ['admin-event', 'approval-history', 'status-history']) void qc.invalidateQueries({ queryKey: [k, id] });
+    for (const k of ['admin-event', 'approval-history', 'status-history', 'fee-change']) void qc.invalidateQueries({ queryKey: [k, id] });
     void qc.invalidateQueries({ queryKey: ['admin-events'] });
     void qc.invalidateQueries({ queryKey: ['approvals-pending'] });
   };
@@ -98,6 +109,7 @@ export default function AdminEventDetailPage() {
           { key: 'start', label: 'เริ่มดำเนินกิจกรรม', show: ['PUBLISHED', 'REGISTRATION_CLOSED'].includes(e.status), onClick: () => confirm('เปลี่ยนสถานะเป็นกำลังดำเนินการ?', 'start') },
           { key: 'complete', label: 'ปิดกิจกรรม (เสร็จสิ้น)', show: e.status === 'IN_PROGRESS', onClick: () => confirm('ปิดกิจกรรม?', 'complete') },
           { key: 'reschedule', label: 'เลื่อนกำหนดการ', show: POST_APPROVAL_EDITABLE.includes(e.status), onClick: () => setDialog('reschedule') },
+          { key: 'fee-change', label: 'ขอแก้ไขอัตราค่าลงทะเบียน', show: POST_APPROVAL_EDITABLE.includes(e.status) && !pending, onClick: () => setFeeDialog(true) },
         ].filter((a) => a.show && can('event:update'));
 
         return (
@@ -154,8 +166,25 @@ export default function AdminEventDetailPage() {
                 style={{ marginBottom: 16 }}
                 type="warning"
                 showIcon
-                title={`รอพิจารณา: ${currentStep.nameTh}`}
-                description={`เสนอโดย ${pending.submittedBy.displayName} เมื่อ ${new Date(pending.submittedAt).toLocaleString('th-TH')}`}
+                title={`${pending.trigger === 'FEE_CHANGE' ? 'คำขอแก้ไขอัตราค่าลงทะเบียน ' : ''}รอพิจารณา: ${currentStep.nameTh}`}
+                description={
+                  <>
+                    <div>
+                      เสนอโดย {pending.submittedBy.displayName} เมื่อ <ThaiDate value={pending.submittedAt} time />
+                      {pending.trigger === 'FEE_CHANGE' && ' — ระหว่างนี้ยังใช้อัตราเดิม'}
+                    </div>
+                    {pending.trigger === 'FEE_CHANGE' && feeChange.data && (
+                      <div style={{ marginTop: 8 }}>
+                        <FeeComparison view={feeChange.data} />
+                        {can('event:update') && (
+                          <Button size="small" style={{ marginTop: 8 }} loading={cancelFeeChange.isPending} onClick={() => modal.confirm({ title: 'ถอนคำขอแก้ไขอัตรา?', okText: 'ถอนคำขอ', cancelText: 'ยกเลิก', onOk: () => cancelFeeChange.mutateAsync() })}>
+                            ถอนคำขอ
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </>
+                }
                 action={
                   can('approval:approve') &&
                   !isProposer && (
@@ -234,7 +263,8 @@ export default function AdminEventDetailPage() {
                         approvals.data.map((r) => (
                           <div key={r.id} style={{ marginBottom: 24 }}>
                             <Typography.Title level={5}>
-                              รอบที่ {r.round} · {r.workflow.nameTh} <StatusTag status={r.status} />
+                              รอบที่ {r.round} · {r.trigger === 'FEE_CHANGE' ? 'ขอแก้ไขอัตราค่าลงทะเบียน · ' : ''}
+                              {r.workflow.nameTh} <StatusTag status={r.status} />
                             </Typography.Title>
                             <Timeline
                               items={r.actions.map((a) => ({
@@ -280,6 +310,8 @@ export default function AdminEventDetailPage() {
                 },
               ]}
             />
+
+            {feeDialog && <FeeChangeDialog event={e} open={feeDialog} onClose={() => setFeeDialog(false)} onDone={refresh} />}
 
             <Modal
               open={dialog !== null}

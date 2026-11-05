@@ -100,6 +100,7 @@ export function RegisterPanel({ event }: { event: EventDetailDto }) {
             <PaymentPanel
               order={r.payment}
               upload={(file, transferredAt) => api.public.uploadSlip(r.referenceNo, r.accessToken, file, { transferredAt })}
+              saveBilling={(b) => api.public.saveBilling(r.referenceNo, r.accessToken, b)}
               onChanged={() => router.push(link)}
             />
           </div>

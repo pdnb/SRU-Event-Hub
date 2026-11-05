@@ -21,6 +21,14 @@ import {
 } from './events.dto';
 import { canTransition, EDITABLE_STATUSES, isRegistrationOpen, PUBLIC_STATUSES } from './event-state';
 
+/** Proposed by a FEE_CHANGE approval request (approval_requests.payload). */
+export interface FeeChangePayload {
+  feeRates: FeeRateInputDto[];
+  bankAccountId: string | null;
+  incomeCodeId: string | null;
+  isPaid: boolean;
+}
+
 const summaryInclude = {
   organization: { select: { id: true, nameTh: true } },
   category: { select: { nameTh: true } },
@@ -251,7 +259,8 @@ export class EventsService {
       );
       if (blocked.length) {
         throw Errors.invalidState(
-          `หลังอนุมัติแล้ว แก้ไขได้เฉพาะรายละเอียดทั่วไป (ฟิลด์ที่ไม่อนุญาต: ${blocked.join(', ')}) — การเปลี่ยนกำหนดการให้ใช้ "เลื่อนกำหนดการ"`,
+          `หลังอนุมัติแล้ว แก้ไขได้เฉพาะรายละเอียดทั่วไป (ฟิลด์ที่ไม่อนุญาต: ${blocked.join(', ')}) — การเปลี่ยนกำหนดการให้ใช้ "เลื่อนกำหนดการ"` +
+            (blocked.some((k) => ['feeRates', 'bankAccountId', 'incomeCodeId'].includes(k)) ? ' และการแก้อัตราค่าลงทะเบียนให้ใช้ "ขอแก้ไขอัตราค่าลงทะเบียน" (ต้องอนุมัติใหม่)' : ''),
         );
       }
     }
@@ -448,7 +457,7 @@ export class EventsService {
   }
 
   /** Returns isPaid. A paid event needs a receiving account (FIN-4) so invoices can be issued. */
-  private validateFees(rates: FeeRateInputDto[] | undefined, bankAccountId: string | null | undefined): boolean {
+  validateFees(rates: FeeRateInputDto[] | undefined, bankAccountId: string | null | undefined): boolean {
     if (!rates) return false;
     for (const r of rates) {
       if (r.validFrom && r.validUntil && !(new Date(r.validUntil) > new Date(r.validFrom))) {
@@ -458,6 +467,18 @@ export class EventsService {
     const isPaid = rates.some((r) => Number(r.amount) > 0);
     if (isPaid && !bankAccountId) throw Errors.validation('กิจกรรมที่มีค่าลงทะเบียนต้องระบุบัญชีรับเงิน');
     return isPaid;
+  }
+
+  /**
+   * Applies an approved FEE_CHANGE request (called by ApprovalsService inside the decision
+   * transaction). Orders already issued keep their own amount snapshot.
+   */
+  async applyFeeChange(tx: Tx, eventId: string, p: FeeChangePayload, userId: string) {
+    await this.syncFees(tx, eventId, p.feeRates);
+    await tx.event.update({
+      where: { id: eventId },
+      data: { isPaid: p.isPaid, bankAccountId: p.bankAccountId, incomeCodeId: p.incomeCodeId, version: { increment: 1 }, updatedById: userId },
+    });
   }
 
   /** Old rates are deactivated (orders keep their own snapshot and FK), new ones inserted. */

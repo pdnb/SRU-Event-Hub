@@ -46,6 +46,20 @@ enum FinanceBatchStatus {
   CLOSED
 }
 
+/// FIN-9: who the official receipt is made out to.
+enum BillingType {
+  INDIVIDUAL // ในนามบุคคล (ชื่อผู้ชำระ)
+  JURISTIC // ในนามนิติบุคคล / หน่วยงาน (ต้องมีเลขประจำตัวผู้เสียภาษี)
+}
+
+/// Bank-statement line ↔ payment matching (กระทบยอด).
+enum StatementMatchStatus {
+  UNMATCHED
+  AUTO // matched by the system (same amount, transfer time within the tolerance)
+  MANUAL // matched by an officer
+  IGNORED // not a registration payment (note required)
+}
+
 enum ReceiptStatus {
   ISSUED
   DELIVERED
@@ -67,8 +81,10 @@ model BankAccount {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  events       Event[]
+  organization   Organization?       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  events         Event[]
+  statements     BankStatement[]
+  statementLines BankStatementLine[]
 
   @@index([organizationId])
   @@map("bank_accounts")
@@ -126,6 +142,13 @@ model PaymentOrder {
   bankAccountSnapshot Json?              @map("bank_account_snapshot")
   incomeCode          String?            @map("income_code") @db.VarChar(30)
   status              PaymentOrderStatus @default(UNPAID)
+  /// FIN-9 receipt addressee. INDIVIDUAL → payer_name; JURISTIC → name + 13-digit tax id + branch.
+  billingType         BillingType        @default(INDIVIDUAL) @map("billing_type")
+  billingName         String?            @map("billing_name") @db.VarChar(300)
+  billingTaxId        String?            @map("billing_tax_id") @db.Char(13)
+  /// "สำนักงานใหญ่" or a 5-digit branch number.
+  billingBranch       String?            @map("billing_branch") @db.VarChar(100)
+  billingAddress      String?            @map("billing_address") @db.VarChar(1000)
   dueAt               DateTime           @map("due_at") @db.Timestamptz(6)
   paidAt              DateTime?          @map("paid_at") @db.Timestamptz(6)
   closedAt            DateTime?          @map("closed_at") @db.Timestamptz(6)
@@ -149,31 +172,33 @@ model PaymentOrder {
 
 /// A payment attempt (transfer slip or on-site cash). Verified payments go into a finance batch.
 model Payment {
-  id               String         @id @default(uuid(7)) @db.Uuid
-  paymentNo        String         @unique @map("payment_no") @db.VarChar(30) // PAY-2570-000001
-  orderId          String         @map("order_id") @db.Uuid
-  channel          PaymentChannel
+  id                String         @id @default(uuid(7)) @db.Uuid
+  paymentNo         String         @unique @map("payment_no") @db.VarChar(30) // PAY-2570-000001
+  orderId           String         @map("order_id") @db.Uuid
+  channel           PaymentChannel
   /// Immutable (trigger).
-  amount           Decimal        @db.Decimal(12, 2)
-  status           PaymentStatus  @default(SUBMITTED)
-  slipFileId       String?        @map("slip_file_id") @db.Uuid
+  amount            Decimal        @db.Decimal(12, 2)
+  status            PaymentStatus  @default(SUBMITTED)
+  slipFileId        String?        @map("slip_file_id") @db.Uuid
   /// SHA-256 of the slip bytes – the same slip cannot back two live payments (partial unique in SQL).
-  slipSha256       String?        @map("slip_sha256") @db.Char(64)
-  transferredAt    DateTime?      @map("transferred_at") @db.Timestamptz(6)
-  payerNote        String?        @map("payer_note") @db.VarChar(500)
-  submittedById    String?        @map("submitted_by_id") @db.Uuid
-  submittedAt      DateTime       @default(now()) @map("submitted_at") @db.Timestamptz(6)
-  verifiedById     String?        @map("verified_by_id") @db.Uuid
+  slipSha256        String?        @map("slip_sha256") @db.Char(64)
+  transferredAt     DateTime?      @map("transferred_at") @db.Timestamptz(6)
+  payerNote         String?        @map("payer_note") @db.VarChar(500)
+  submittedById     String?        @map("submitted_by_id") @db.Uuid
+  submittedAt       DateTime       @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  verifiedById      String?        @map("verified_by_id") @db.Uuid
   /// On-site cash: the cashier session that received it.
-  cashierSessionId String?        @map("cashier_session_id") @db.Uuid
-  verifiedAt       DateTime?      @map("verified_at") @db.Timestamptz(6)
-  rejectReason     String?        @map("reject_reason") @db.VarChar(1000)
-  voidedById       String?        @map("voided_by_id") @db.Uuid
-  voidedAt         DateTime?      @map("voided_at") @db.Timestamptz(6)
-  voidReason       String?        @map("void_reason") @db.VarChar(1000)
-  version          Int            @default(1)
-  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cashierSessionId  String?        @map("cashier_session_id") @db.Uuid
+  /// FIN-12: recorded while the cash point was offline and synced later = when the cash was taken.
+  capturedOfflineAt DateTime?      @map("captured_offline_at") @db.Timestamptz(6)
+  verifiedAt        DateTime?      @map("verified_at") @db.Timestamptz(6)
+  rejectReason      String?        @map("reject_reason") @db.VarChar(1000)
+  voidedById        String?        @map("voided_by_id") @db.Uuid
+  voidedAt          DateTime?      @map("voided_at") @db.Timestamptz(6)
+  voidReason        String?        @map("void_reason") @db.VarChar(1000)
+  version           Int            @default(1)
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   order          PaymentOrder         @relation(fields: [orderId], references: [id], onDelete: Restrict)
   slipFile       File?                @relation("PaymentSlip", fields: [slipFileId], references: [id], onDelete: Restrict)
@@ -183,6 +208,7 @@ model Payment {
   ledger         PaymentLedgerEntry[]
   batchItems     FinanceBatchItem[]
   receipts       ReceiptRecord[]
+  statementLines BankStatementLine[]
 
   @@index([orderId])
   @@index([status, submittedAt])
@@ -368,4 +394,64 @@ model Refund {
   @@index([orderId])
   @@index([status, createdAt])
   @@map("refunds")
+}
+
+/// Uploaded bank statement (CSV/XLSX) of a receiving account, for reconciliation (กระทบยอด).
+/// Only credit (incoming) lines are imported; the same file cannot be uploaded twice per account.
+model BankStatement {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  statementNo    String   @unique @map("statement_no") @db.VarChar(30) // BS-2570-000001
+  bankAccountId  String   @map("bank_account_id") @db.Uuid
+  fileName       String   @map("file_name") @db.VarChar(300)
+  fileSha256     String   @map("file_sha256") @db.Char(64)
+  periodFrom     DateTime @map("period_from") @db.Timestamptz(6)
+  periodTo       DateTime @map("period_to") @db.Timestamptz(6)
+  /// Lines imported by this upload (lines already imported from an overlapping file are skipped).
+  lineCount      Int      @map("line_count")
+  duplicateCount Int      @default(0) @map("duplicate_count")
+  totalCredit    Decimal  @map("total_credit") @db.Decimal(12, 2)
+  uploadedById   String   @map("uploaded_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  bankAccount BankAccount         @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  uploadedBy  User                @relation("StatementUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  lines       BankStatementLine[]
+
+  @@unique([bankAccountId, fileSha256])
+  @@index([bankAccountId, periodFrom])
+  @@map("bank_statements")
+}
+
+/// One credit line of a statement. Amount is immutable and lines are never deleted (trigger).
+/// A payment backs at most one live match (partial unique on payment_id WHERE AUTO/MANUAL).
+model BankStatementLine {
+  id            String               @id @default(uuid(7)) @db.Uuid
+  statementId   String               @map("statement_id") @db.Uuid
+  bankAccountId String               @map("bank_account_id") @db.Uuid
+  lineNo        Int                  @map("line_no")
+  txnAt         DateTime             @map("txn_at") @db.Timestamptz(6)
+  amount        Decimal              @db.Decimal(12, 2)
+  description   String?              @db.VarChar(500)
+  reference     String?              @db.VarChar(100)
+  /// sha256(time|amount|reference|description|occurrence): one bank transaction is imported once per account.
+  fingerprint   String               @db.Char(64)
+  matchStatus   StatementMatchStatus @default(UNMATCHED) @map("match_status")
+  paymentId     String?              @map("payment_id") @db.Uuid
+  matchedById   String?              @map("matched_by_id") @db.Uuid
+  matchedAt     DateTime?            @map("matched_at") @db.Timestamptz(6)
+  note          String?              @db.VarChar(1000)
+  version       Int                  @default(1)
+  createdAt     DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  statement   BankStatement @relation(fields: [statementId], references: [id], onDelete: Restrict)
+  bankAccount BankAccount   @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  payment     Payment?      @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  matchedBy   User?         @relation("StatementLineMatchedBy", fields: [matchedById], references: [id], onDelete: SetNull)
+
+  @@unique([statementId, lineNo])
+  @@unique([bankAccountId, fingerprint])
+  @@index([bankAccountId, matchStatus, txnAt])
+  @@index([paymentId])
+  @@map("bank_statement_lines")
 }

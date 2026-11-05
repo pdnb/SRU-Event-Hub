@@ -4,3 +4,4 @@ export * from './promptpay';
 export * from './thai-date';
 export * from './reference';
 export * from './spreadsheet';
+export * from './tax-id';

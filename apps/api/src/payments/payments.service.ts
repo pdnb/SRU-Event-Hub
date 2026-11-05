@@ -15,6 +15,7 @@ import type { Env } from '../config/env';
 import { Payment, PaymentOrder, Prisma } from '../generated/prisma/client';
 import { PrismaService, Tx } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { BillingInputDto, billingColumns, billingDto } from './billing';
 import { paymentDueAt, selectFeeRate } from './fee';
 import { FinancePaymentQueryDto, SubmitSlipDto } from './payments.dto';
 import { PaymentQueue } from './payment-queue';
@@ -77,7 +78,10 @@ export class PaymentsService {
     rate: { id: string; nameTh: string; amount: Prisma.Decimal },
     event: { startAt: Date; paymentWindowHours: number; bankAccountId: string | null; incomeCodeId: string | null },
     now = new Date(),
+    billing?: BillingInputDto,
   ) {
+    // Validate before any write so a bad tax id fails the registration cleanly.
+    const billingData = billing ? billingColumns(billing) : {};
     const [bank, income] = await Promise.all([
       event.bankAccountId ? tx.bankAccount.findUnique({ where: { id: event.bankAccountId } }) : null,
       event.incomeCodeId ? tx.incomeCode.findUnique({ where: { id: event.incomeCodeId } }) : null,
@@ -98,12 +102,32 @@ export class PaymentsService {
         bankAccountSnapshot: bankSnapshot ? (bankSnapshot as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
         incomeCode: income?.code ?? null,
         dueAt: paymentDueAt(now, event.paymentWindowHours, event.startAt),
+        ...billingData,
       },
     });
     await tx.paymentLedgerEntry.create({
       data: { orderId: order.id, entryType: 'CHARGE', amount: rate.amount, reason: rate.nameTh },
     });
     return order;
+  }
+
+  /**
+   * FIN-9: sets who the receipt is made out to. Allowed while no official receipt number has been
+   * recorded for the order (after that กองคลัง must void the receipt first).
+   */
+  async updateBilling(orderId: string, billing: BillingInputDto, actorId: string | null, meta: RequestMeta) {
+    const data = billingColumns(billing);
+    return this.prisma.$transaction(async (tx) => {
+      const [locked] = await tx.$queryRaw<{ status: string }[]>`SELECT status::text FROM payment_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+      if (!locked) throw Errors.notFound('ใบแจ้งชำระ');
+      if (['CANCELLED', 'EXPIRED', 'REFUNDED'].includes(locked.status)) throw Errors.invalidState('ใบแจ้งชำระนี้ปิดแล้ว');
+      const receipts = await tx.receiptRecord.count({ where: { payment: { orderId }, status: { not: 'VOIDED' } } });
+      if (receipts) throw Errors.invalidState('กองคลังออกใบเสร็จแล้ว แก้ไขข้อมูลผู้รับใบเสร็จไม่ได้ (ติดต่อกองคลังเพื่อยกเลิกใบเสร็จก่อน)');
+      const before = await tx.paymentOrder.findUniqueOrThrow({ where: { id: orderId } });
+      const o = await tx.paymentOrder.update({ where: { id: orderId }, data: { ...data, version: { increment: 1 } } });
+      await this.audit.log({ actorId, action: 'payment_order.billing', entityType: 'payment_order', entityId: orderId, before: billingDto(before), after: billingDto(o), meta }, tx);
+      return billingDto(o);
+    });
   }
 
   /** Schedules the exact-time expiry job (the periodic sweeper is the safety net). Call after commit. */
@@ -241,6 +265,11 @@ export class PaymentsService {
       if (ctx.registrationId) {
         await tx.registration.update({ where: { id: ctx.registrationId }, data: { paymentDueAt: dueAt } });
       }
+      // A rejected slip no longer explains a bank credit: put the statement line back for review.
+      await tx.bankStatementLine.updateMany({
+        where: { paymentId: p.id, matchStatus: { in: ['AUTO', 'MANUAL'] } },
+        data: { matchStatus: 'UNMATCHED', paymentId: null, matchedAt: now, matchedById: user.id, note: `หลักฐาน ${p.paymentNo} ไม่ผ่านการตรวจสอบ`, version: { increment: 1 } },
+      });
       await this.audit.log({ actorId: user.id, action: 'payment.reject', entityType: 'payment', entityId: p.id, before: { status: 'SUBMITTED' }, after: { status: 'REJECTED', dueAt }, reason, meta }, tx);
       this.scheduleExpiry({ id: p.orderId, dueAt });
       return { id: p.id, status: 'REJECTED', newDueAt: dueAt.toISOString() };
@@ -337,6 +366,7 @@ export class PaymentsService {
           verifiedBy: { select: { displayName: true } },
           batchItems: { where: { isActive: true }, include: { batch: { select: { batchNo: true } } } },
           receipts: { where: { status: { not: 'VOIDED' } } },
+          statementLines: { where: { matchStatus: { in: ['AUTO', 'MANUAL'] } }, select: { id: true, txnAt: true } },
         },
         orderBy: { submittedAt: q.order },
         skip: q.skip,
@@ -359,6 +389,8 @@ export class PaymentsService {
       verifiedByName: p.verifiedBy?.displayName ?? null,
       batchNo: p.batchItems[0]?.batch.batchNo ?? null,
       receiptNo: p.receipts[0] ? `${p.receipts[0].bookNo}/${p.receipts[0].receiptNo}` : null,
+      statementMatchedAt: p.statementLines[0]?.txnAt.toISOString() ?? null,
+      billing: billingDto(p.order),
     }));
     return Paginated.of(data, total, q);
   }
@@ -398,6 +430,7 @@ export class PaymentsService {
       bankAccount: bank,
       promptPayPayload: qr,
       latestPayment: latest ? this.paymentDto(latest) : null,
+      billing: billingDto(o),
     };
   }
 

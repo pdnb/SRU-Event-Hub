@@ -1,6 +1,6 @@
 'use client';
 
-import { DownloadOutlined, FileDoneOutlined, InboxOutlined, RollbackOutlined, SendOutlined } from '@ant-design/icons';
+import { DownloadOutlined, FileDoneOutlined, FilePdfOutlined, InboxOutlined, RollbackOutlined, SendOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FinanceBatchDto } from '@sru/shared-types';
 import { Alert, Button, Card, DatePicker, Descriptions, Form, Input, Modal, Popconfirm, Skeleton, Space, Table, Typography } from 'antd';
@@ -102,7 +102,12 @@ export default function FinanceBatchDetailPage({ params }: { params: Promise<{ i
         actions={
           <Space wrap>
             {can('finance_batch:export') && (
-              <Button icon={<DownloadOutlined />} onClick={() => downloadFile(`/finance/batches/${id}/export`, `${b.batchNo}.xlsx`).catch(msg.error)}>
+              <Button icon={<FilePdfOutlined />} onClick={() => downloadFile(`/finance/batches/${id}/export`, `${b.batchNo}.pdf`, { format: 'pdf' }).catch(msg.error)}>
+                รายงานนำส่ง (PDF)
+              </Button>
+            )}
+            {can('finance_batch:export') && (
+              <Button icon={<DownloadOutlined />} onClick={() => downloadFile(`/finance/batches/${id}/export`, `${b.batchNo}.xlsx`, { format: 'xlsx' }).catch(msg.error)}>
                 รายงานนำส่ง (Excel)
               </Button>
             )}

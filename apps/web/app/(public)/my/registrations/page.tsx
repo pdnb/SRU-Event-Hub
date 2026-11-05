@@ -91,6 +91,7 @@ export default function MyRegistrationsPage() {
           <PaymentPanel
             order={paying.payment}
             upload={(file, transferredAt) => api.payments.uploadSlip(paying.id, file, { transferredAt })}
+            saveBilling={(b) => api.payments.saveBilling(paying.id, b)}
             onChanged={() => void qc.invalidateQueries({ queryKey: ['my-registrations'] })}
           />
         )}

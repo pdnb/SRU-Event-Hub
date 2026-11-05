@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ThaiDate } from '@/components/Format';
 import { PageHeader } from '@/components/PageHeader';
 import { ErrorState } from '@/components/QueryState';
+import { FeeComparison, type FeeChangeView } from '@/features/events/FeeChange';
 import { api } from '@/services/api';
 
 type Pending = {
@@ -16,6 +17,8 @@ type Pending = {
   submittedBy: { displayName: string };
   step: { order: number; nameTh: string; isFinanceReview: boolean };
   event: { id: string; code: string; titleTh: string; organizationName: string; startAt: string; isPaid: boolean };
+  /** FEE_CHANGE: current vs. proposed fee rates. */
+  feeChange: FeeChangeView | null;
 };
 
 export default function ApprovalsPage() {
@@ -34,6 +37,7 @@ export default function ApprovalsPage() {
             scroll={{ x: 800 }}
             locale={{ emptyText: 'ไม่มีรายการรอพิจารณา' }}
             pagination={{ pageSize: 20 }}
+            expandable={{ rowExpandable: (r) => !!r.feeChange, expandedRowRender: (r) => r.feeChange && <FeeComparison view={r.feeChange} /> }}
             columns={[
               { title: 'กิจกรรม', render: (_, r) => <Link href={`/admin/events/${r.event.id}`}>{r.event.titleTh}</Link> },
               { title: 'รหัส', width: 150, render: (_, r) => <Typography.Text code>{r.event.code}</Typography.Text> },
@@ -45,6 +49,7 @@ export default function ApprovalsPage() {
                   <>
                     {r.step.nameTh} {r.step.isFinanceReview && <Tag color="gold">การเงิน</Tag>}
                     {r.round > 1 && <Tag>รอบ {r.round}</Tag>}
+                    {r.trigger === 'FEE_CHANGE' && <Tag color="orange">แก้ไขอัตราค่าลงทะเบียน</Tag>}
                   </>
                 ),
               },

@@ -6,6 +6,7 @@ import {
   IsArray,
   IsDateString,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -51,6 +52,10 @@ export class CreateBatchDto {
 export class BatchQueryDto extends PageQueryDto {
   @ApiPropertyOptional({ enum: FinanceBatchStatus }) @IsOptional() @IsEnum(FinanceBatchStatus) status?: FinanceBatchStatus;
   @IsOptional() @IsUUID() eventId?: string;
+}
+
+export class ExportFormatDto {
+  @IsOptional() @IsIn(['pdf', 'xlsx']) format: 'pdf' | 'xlsx' = 'xlsx';
 }
 
 export class EligibleQueryDto {
@@ -109,6 +114,8 @@ export class PayablesQueryDto {
 
 export class CollectDto {
   @IsUUID() orderId!: string;
+  /** FIN-12: only when syncing a collection recorded offline — when the cash was actually taken. */
+  @IsOptional() @IsDateString() capturedAt?: string;
 }
 
 export class CloseSessionDto {

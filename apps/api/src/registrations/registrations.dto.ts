@@ -16,6 +16,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { RegistrationStatus } from '../generated/prisma/client';
+import { BillingInputDto } from '../payments/billing';
 import { PageQueryDto } from '../common/pagination';
 
 export class AnswerDto {
@@ -37,6 +38,9 @@ export class CreateRegistrationDto {
   @IsOptional() @IsString() @MaxLength(300) program?: string;
   @IsOptional() @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => AnswerDto)
   answers?: AnswerDto[];
+  /** FIN-9: receipt in the name of a juristic person (optional; can be set later). */
+  @IsOptional() @ValidateNested() @Type(() => BillingInputDto)
+  billing?: BillingInputDto;
   /** PDPA consent must be explicitly given. */
   @Equals(true, { message: 'กรุณายอมรับนโยบายคุ้มครองข้อมูลส่วนบุคคล' })
   pdpaConsent!: boolean;
@@ -63,4 +67,12 @@ export class TokenCancelDto extends TokenLookupDto {
 
 export class CancelDto {
   @IsOptional() @IsString() @MaxLength(1000) reason?: string;
+}
+
+export class BillingUpdateDto {
+  @ValidateNested() @Type(() => BillingInputDto) billing!: BillingInputDto;
+}
+
+export class TokenBillingDto extends TokenLookupDto {
+  @ValidateNested() @Type(() => BillingInputDto) billing!: BillingInputDto;
 }

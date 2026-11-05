@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { useNowMinute } from '@/hooks/useClientValue';
 import { Money, ThaiDate } from '@/components/Format';
 import { StatusTag } from '@/components/StatusTag';
+import { BillingEditor } from '@/features/finance/billing';
 import { useApiMessage } from '@/hooks/useApiMessage';
 import dayjs from '@/services/dayjs';
 
@@ -34,10 +35,13 @@ function useRemaining(dueAt: string) {
 export function PaymentPanel({
   order,
   upload,
+  saveBilling,
   onChanged,
 }: {
   order: PaymentOrderDto;
   upload: (file: File, transferredAt?: string) => Promise<unknown>;
+  /** FIN-9: when given, the payer can choose who the official receipt is made out to. */
+  saveBilling?: (billing: object) => Promise<unknown>;
   onChanged?: () => void;
 }) {
   const msg = useApiMessage();
@@ -85,6 +89,18 @@ export function PaymentPanel({
         {order.paidAt && (
           <Descriptions.Item label="ชำระเมื่อ">
             <ThaiDate value={order.paidAt} time />
+          </Descriptions.Item>
+        )}
+        {order.billing && (
+          <Descriptions.Item label="ออกใบเสร็จในนาม">
+            <BillingEditor
+              value={order.billing}
+              disabled={!saveBilling || ['CANCELLED', 'EXPIRED', 'REFUNDED'].includes(order.status)}
+              onSave={async (b) => {
+                await saveBilling!(b);
+                onChanged?.();
+              }}
+            />
           </Descriptions.Item>
         )}
       </Descriptions>

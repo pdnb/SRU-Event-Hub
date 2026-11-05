@@ -62,6 +62,7 @@ const MENU: Item[] = [
       { key: '/admin/finance/batches', label: 'ชุดนำส่งกองคลัง', icon: null, perm: 'finance_batch:view' },
       { key: '/admin/finance/settings', label: 'บัญชีรับเงิน / รหัสรายได้', icon: null, perm: 'bank_account:view' },
       { key: '/admin/finance/cashier', label: 'รับชำระหน้างาน', icon: null, perm: 'cashier:view' },
+      { key: '/admin/finance/reconciliation', label: 'กระทบยอดธนาคาร', icon: null, perm: 'finance_batch:reconcile' },
       { key: '/admin/finance/refunds', label: 'คืนเงิน', icon: null, perm: 'refund:view' },
     ],
   },
