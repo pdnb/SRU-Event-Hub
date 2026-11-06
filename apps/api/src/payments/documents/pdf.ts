@@ -13,7 +13,7 @@ import { DocumentTemplate, fill } from './templates';
  */
 
 /** src/payments/documents → apps/api/assets ; dist/payments/documents → /app/assets (same depth). */
-const FONT_DIR = [join(__dirname, '../../../assets/fonts'), join(process.cwd(), 'assets/fonts')].find((d) => existsSync(d))!;
+export const FONT_DIR = [join(__dirname, '../../../assets/fonts'), join(process.cwd(), 'assets/fonts')].find((d) => existsSync(d))!;
 
 const words = new Intl.Segmenter('th', { granularity: 'word' });
 const graphemes = new Intl.Segmenter('th', { granularity: 'grapheme' });

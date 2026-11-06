@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckOutlined, EditOutlined, EyeOutlined, RollbackOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
+import { CheckOutlined, EditOutlined, EyeOutlined, IdcardOutlined, QrcodeOutlined, RollbackOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Card, Descriptions, Dropdown, Flex, Form, Input, Modal, Progress, Tabs, Tag, Timeline, Typography } from 'antd';
 import Link from 'next/link';
@@ -131,6 +131,16 @@ export default function AdminEventDetailPage() {
                   {POST_APPROVAL_EDITABLE.includes(e.status) && e.status !== 'APPROVED' && (
                     <Link href={`/events/${e.code}`} target="_blank">
                       <Button icon={<EyeOutlined />}>ดูหน้าสาธารณะ</Button>
+                    </Link>
+                  )}
+                  {['PUBLISHED', 'REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'IN_PROGRESS', 'COMPLETED'].includes(e.status) && can('checkin:view') && (
+                    <Link href={`/admin/checkin/${id}`}>
+                      <Button icon={<QrcodeOutlined />}>เช็กอิน</Button>
+                    </Link>
+                  )}
+                  {!['DRAFT', 'CANCELLED', 'REJECTED'].includes(e.status) && can('badge:view') && (
+                    <Link href={`/admin/badges/${id}`}>
+                      <Button icon={<IdcardOutlined />}>ป้ายชื่อ</Button>
                     </Link>
                   )}
                   {canEdit && (

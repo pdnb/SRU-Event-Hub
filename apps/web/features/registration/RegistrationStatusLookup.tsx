@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { ApiError } from '@sru/api-client';
 import { ThaiDateRange, ThaiDate } from '@/components/Format';
 import { StatusTag } from '@/components/StatusTag';
+import { CheckinQrButton } from '@/features/checkin/CheckinQr';
 import { PaymentPanel } from '@/features/payment/PaymentPanel';
 import { api } from '@/services/api';
 
@@ -86,6 +87,20 @@ export function RegistrationStatusLookup() {
               <ThaiDate value={r.createdAt} time />
             </Descriptions.Item>
           </Descriptions>
+          {r.status === 'CONFIRMED' && creds && new Date(r.event.endAt) > new Date() && (
+            <div style={{ marginTop: 16 }}>
+              <CheckinQrButton
+                type="primary"
+                size="middle"
+                buttonText="แสดง QR สำหรับเช็กอินหน้างาน"
+                queryKey={['checkin-qr-guest', r.referenceNo]}
+                load={() => api.post<{ code: string }>('/public/registrations/checkin-qr', { referenceNo: creds.referenceNo.trim().toUpperCase(), token: creds.token.trim() })}
+                title={r.event.titleTh}
+                subtitle={`${r.fullName} · ${r.referenceNo}`}
+                note={<Typography.Text type="secondary" style={{ fontSize: 13 }}>บันทึกภาพหน้าจอเก็บไว้ได้ แต่ไม่ควรส่งต่อให้ผู้อื่น</Typography.Text>}
+              />
+            </div>
+          )}
           {active && r.payment && creds && (
             <div style={{ marginTop: 16 }}>
               <PaymentPanel

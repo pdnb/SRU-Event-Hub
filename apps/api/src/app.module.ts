@@ -6,6 +6,8 @@ import { randomUUID } from 'node:crypto';
 import { LoggerModule } from 'nestjs-pino';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
+import { BadgesModule } from './badges/badges.module';
+import { CheckinModule } from './checkin/checkin.module';
 import { CsrfGuard, JwtAuthGuard, PermissionsGuard } from './auth/guards';
 import { CategoriesModule } from './categories/categories.module';
 import { CommonModule } from './common/common.module';
@@ -68,6 +70,8 @@ import { UsersModule } from './users/users.module';
     RegistrationsModule,
     PaymentsModule,
     GroupsModule,
+    CheckinModule,
+    BadgesModule,
     AdminModule,
   ],
   controllers: [HealthController],

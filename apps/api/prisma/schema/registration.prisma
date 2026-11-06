@@ -109,6 +109,10 @@ model Registration {
   group           RegistrationGroup?      @relation(fields: [groupId], references: [id], onDelete: Restrict)
   orderLines      PaymentOrderLine[]
   invitations     GroupMemberInvitation[]
+  checkinTokens   CheckinToken[]
+  checkinRecords  CheckinRecord[]
+  attendance      AttendanceRecord[]
+  badgePrints     BadgePrint[]
 
   @@index([eventId, status])
   @@index([groupId, status])

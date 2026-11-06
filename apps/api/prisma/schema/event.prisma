@@ -97,52 +97,56 @@ model ParticipantType {
 }
 
 model Event {
-  id                     String         @id @default(uuid(7)) @db.Uuid
-  code                   String         @unique @db.VarChar(30) // EVT-2570-000001
-  titleTh                String         @map("title_th") @db.VarChar(300)
-  titleEn                String?        @map("title_en") @db.VarChar(300)
-  eventTypeId            String?        @map("event_type_id") @db.Uuid
-  categoryId             String?        @map("category_id") @db.Uuid
-  organizationId         String         @map("organization_id") @db.Uuid
-  ownerUserId            String         @map("owner_user_id") @db.Uuid
-  description            String?
-  objectives             String?
-  targetAudience         String?        @map("target_audience")
-  conditions             String?
-  startAt                DateTime       @map("start_at") @db.Timestamptz(6)
-  endAt                  DateTime       @map("end_at") @db.Timestamptz(6)
-  registrationOpenAt     DateTime?      @map("registration_open_at") @db.Timestamptz(6)
-  registrationCloseAt    DateTime?      @map("registration_close_at") @db.Timestamptz(6)
-  venueId                String?        @map("venue_id") @db.Uuid
-  venueText              String?        @map("venue_text") @db.VarChar(500)
+  id                        String         @id @default(uuid(7)) @db.Uuid
+  code                      String         @unique @db.VarChar(30) // EVT-2570-000001
+  titleTh                   String         @map("title_th") @db.VarChar(300)
+  titleEn                   String?        @map("title_en") @db.VarChar(300)
+  eventTypeId               String?        @map("event_type_id") @db.Uuid
+  categoryId                String?        @map("category_id") @db.Uuid
+  organizationId            String         @map("organization_id") @db.Uuid
+  ownerUserId               String         @map("owner_user_id") @db.Uuid
+  description               String?
+  objectives                String?
+  targetAudience            String?        @map("target_audience")
+  conditions                String?
+  startAt                   DateTime       @map("start_at") @db.Timestamptz(6)
+  endAt                     DateTime       @map("end_at") @db.Timestamptz(6)
+  registrationOpenAt        DateTime?      @map("registration_open_at") @db.Timestamptz(6)
+  registrationCloseAt       DateTime?      @map("registration_close_at") @db.Timestamptz(6)
+  venueId                   String?        @map("venue_id") @db.Uuid
+  venueText                 String?        @map("venue_text") @db.VarChar(500)
   /// null = unlimited. CHECK seats_taken <= capacity enforced in SQL.
-  capacity               Int?
-  minParticipants        Int?           @map("min_participants")
+  capacity                  Int?
+  minParticipants           Int?           @map("min_participants")
   /// Seats held by PENDING_PAYMENT + CONFIRMED registrations. Updated atomically.
-  seatsTaken             Int            @default(0) @map("seats_taken")
-  budget                 Decimal?       @db.Decimal(12, 2)
-  isPaid                 Boolean        @default(false) @map("is_paid")
+  seatsTaken                Int            @default(0) @map("seats_taken")
+  budget                    Decimal?       @db.Decimal(12, 2)
+  isPaid                    Boolean        @default(false) @map("is_paid")
   /// Hours a PENDING_PAYMENT seat is held before the order expires (capped at the event start).
-  paymentWindowHours     Int            @default(72) @map("payment_window_hours")
-  bankAccountId          String?        @map("bank_account_id") @db.Uuid
-  incomeCodeId           String?        @map("income_code_id") @db.Uuid
-  allowGuestRegistration Boolean        @default(false) @map("allow_guest_registration")
-  allowWaitlist          Boolean        @default(true) @map("allow_waitlist")
-  allowSelfCancel        Boolean        @default(true) @map("allow_self_cancel")
-  isFeatured             Boolean        @default(false) @map("is_featured")
-  status                 EventStatus    @default(DRAFT)
-  approvalStatus         ApprovalStatus @default(NOT_SUBMITTED) @map("approval_status")
-  coverImageFileId       String?        @map("cover_image_file_id") @db.Uuid
-  publishedAt            DateTime?      @map("published_at") @db.Timestamptz(6)
-  cancelledAt            DateTime?      @map("cancelled_at") @db.Timestamptz(6)
-  cancelReason           String?        @map("cancel_reason") @db.VarChar(1000)
+  paymentWindowHours        Int            @default(72) @map("payment_window_hours")
+  bankAccountId             String?        @map("bank_account_id") @db.Uuid
+  incomeCodeId              String?        @map("income_code_id") @db.Uuid
+  allowGuestRegistration    Boolean        @default(false) @map("allow_guest_registration")
+  allowWaitlist             Boolean        @default(true) @map("allow_waitlist")
+  allowSelfCancel           Boolean        @default(true) @map("allow_self_cancel")
+  /// Check-in opens this many minutes before start_at (P4).
+  checkinOpensBeforeMinutes Int            @default(120) @map("checkin_opens_before_minutes")
+  /// Check-in later than start + N minutes counts as LATE (null = never late).
+  checkinLateAfterMinutes   Int?           @map("checkin_late_after_minutes")
+  isFeatured                Boolean        @default(false) @map("is_featured")
+  status                    EventStatus    @default(DRAFT)
+  approvalStatus            ApprovalStatus @default(NOT_SUBMITTED) @map("approval_status")
+  coverImageFileId          String?        @map("cover_image_file_id") @db.Uuid
+  publishedAt               DateTime?      @map("published_at") @db.Timestamptz(6)
+  cancelledAt               DateTime?      @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason              String?        @map("cancel_reason") @db.VarChar(1000)
   /// Optimistic concurrency for edits.
-  version                Int            @default(1)
-  createdAt              DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdById            String         @map("created_by_id") @db.Uuid
-  updatedById            String?        @map("updated_by_id") @db.Uuid
-  deletedAt              DateTime?      @map("deleted_at") @db.Timestamptz(6)
+  version                   Int            @default(1)
+  createdAt                 DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById               String         @map("created_by_id") @db.Uuid
+  updatedById               String?        @map("updated_by_id") @db.Uuid
+  deletedAt                 DateTime?      @map("deleted_at") @db.Timestamptz(6)
 
   eventType          EventType?             @relation(fields: [eventTypeId], references: [id], onDelete: Restrict)
   category           EventCategory?         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
@@ -172,6 +176,13 @@ model Event {
   registrationGroups RegistrationGroup[]
   venueBookings      VenueBooking[]
   resourceBookings   ResourceBooking[]
+  checkinLocations   CheckinLocation[]
+  checkinTokens      CheckinToken[]
+  checkinRecords     CheckinRecord[]
+  attendanceRecords  AttendanceRecord[]
+  personnel          EventPersonnel[]
+  badgeTemplates     BadgeTemplate[]
+  badgePrintJobs     BadgePrintJob[]
 
   @@index([organizationId, status])
   @@index([status, startAt])
@@ -232,7 +243,10 @@ model EventSchedule {
   speaker   String?  @db.VarChar(300)
   sortOrder Int      @default(0) @map("sort_order")
 
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event             Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  checkinLocations  CheckinLocation[]
+  checkinRecords    CheckinRecord[]
+  attendanceRecords AttendanceRecord[]
 
   @@index([eventId, startAt])
   @@map("event_schedules")

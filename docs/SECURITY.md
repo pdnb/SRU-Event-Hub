@@ -26,3 +26,6 @@
 - ✅ P2: Separation of duties ด้านการเงิน (ตรวจสลิป, ยกเลิกรับเงิน, ยืนยันยอดกะ, รับชุดนำส่ง, อนุมัติ/จ่ายคืนเงิน) บังคับที่ API
 - ✅ P2: ESLint (`pnpm lint`) — typescript-eslint, react-hooks, next
 - P3: token ลิงก์เชิญ (hash, ใช้ครั้งเดียว), ตรวจไฟล์ Excel นำเข้า
+- ✅ P4: QR เช็กอิน = HMAC-SHA256 (คีย์ HKDF จาก `FIELD_ENCRYPTION_KEY`) 128 บิต — DB เก็บเฉพาะ SHA-256 (อ่าน DB แล้วปลอม QR ไม่ได้), ออกใหม่ = QR เดิมใช้ไม่ได้, รายชื่อออฟไลน์มีเฉพาะ hash · ดู QR แบบไม่ login ต้องมีเลขอ้างอิง+token (ตอบเหมือนกันทั้งไม่พบ/ผิด, จำกัดอัตรา)
+- ✅ P4: Socket.IO ยืนยันตัวตนด้วย access token เดียวกับ REST, ตรวจ `checkin:view` ทุกการ subscribe, ข้อความไม่มีข้อมูลส่วนบุคคล, จำกัดขนาดข้อความ 16 KB, CORS ตาม `CORS_ORIGINS`
+- ✅ P4: `checkin_records`, `badge_prints` append-only (trigger); พิมพ์ป้ายซ้ำต้องมีสิทธิ์+เหตุผล; ภาพพื้นหลังป้ายตรวจ magic number เก็บ private bucket

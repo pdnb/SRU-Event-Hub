@@ -12,6 +12,7 @@ import { ErrorState } from '@/components/QueryState';
 import { StatusTag } from '@/components/StatusTag';
 import { useApiMessage } from '@/hooks/useApiMessage';
 import { useMe } from '@/hooks/useMe';
+import { CheckinQrButton } from '@/features/checkin/CheckinQr';
 import { PaymentPanel } from '@/features/payment/PaymentPanel';
 import { api } from '@/services/api';
 
@@ -61,6 +62,9 @@ export default function MyRegistrationsPage() {
               <List.Item
                 actions={[
                   <StatusTag key="s" status={r.status} />,
+                  r.status === 'CONFIRMED' && new Date(r.event.endAt) > new Date() ? (
+                    <CheckinQrButton key="qr" queryKey={['checkin-qr', r.id]} load={() => api.get<{ code: string }>(`/registrations/${r.id}/checkin-qr`)} title={r.event.titleTh} subtitle={`${r.fullName} · ${r.referenceNo}`} />
+                  ) : null,
                   r.payment && ['UNPAID', 'PENDING_VERIFICATION', 'PAID'].includes(r.payment.status) ? (
                     <Button key="p" size="small" type={r.payment.status === 'UNPAID' ? 'primary' : 'default'} onClick={() => setPayingId(r.id)}>
                       {r.payment.status === 'UNPAID' ? 'ชำระเงิน' : 'การชำระเงิน'}

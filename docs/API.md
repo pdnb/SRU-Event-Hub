@@ -103,6 +103,53 @@ POST /public/group-invitations/view {token}     POST /public/group-invitations/a
 ```
 error code ใหม่: `GROUP_DISABLED`, `GROUP_LIMIT`, `GROUP_FULL`, `GROUP_SEATS_UNAVAILABLE` (details: available, requested), `DUPLICATE_MEMBER`, `GROUP_MEMBER` (ยกเลิกรายคนไม่ได้ — ต้องผ่านกลุ่ม), `INVITATION_INVALID`, `INVITE_DISABLED`, `IMPORT_DISABLED`
 
+## Endpoints (P4 — เช็กอิน การเข้าร่วม ป้ายชื่อ)
+```text
+# QR (ข้อความ QR = "SRU1.<token 22 ตัว>")
+GET  /registrations/:id/checkin-qr          (เจ้าของ หรือ checkin:view) → {code, referenceNo, status}  เฉพาะ CONFIRMED / PENDING_PAYMENT
+POST /public/registrations/checkin-qr {referenceNo, token}   (ไม่ต้องเข้าสู่ระบบ; จำกัด 10/นาที)
+GET  /groups/:id/checkin-qr                 (ผู้ประสานงาน หรือ checkin:view) — QR กลุ่ม
+POST /registrations/:id/checkin-qr/reissue {reason}   (checkin:update) — QR เดิมใช้ไม่ได้ทันที
+
+# จุดเช็กอิน
+GET  /me/desk-events?purpose=checkin|badge  — กิจกรรมที่เปิดจุด/พิมพ์ป้ายได้ (ตามขอบเขต + บุคลากรที่ได้รับมอบหมาย)
+GET  /events/:id/checkin/settings           PUT /events/:id/checkin/settings {opensBeforeMinutes, lateAfterMinutes?}
+POST /events/:id/checkin/locations {nameTh, scheduleId?}   PATCH /checkin/locations/:id {nameTh?, scheduleId?, isActive?}
+POST /events/:id/schedules {title, startAt, endAt, venueText?}   PUT/DELETE /event-schedules/:id   (event:update)
+POST /events/:id/checkin/scan {code, locationId?, scheduleId?, action?: CHECK_IN|CHECK_OUT, clientKey?}
+       → {kind: REGISTRATION, outcome: CHECKED_IN|ALREADY_CHECKED_IN|CHECKED_OUT, registration, attendance, record}
+       → {kind: GROUP, group: {members…}}   (QR กลุ่ม: ยังไม่เช็กอินใคร)
+POST /events/:id/checkin/manual {registrationId, …point, note?}
+POST /events/:id/checkin/group {groupId, registrationIds[], locationId?, scheduleId?}  → ผลรายคน
+GET  /events/:id/checkin/search?q=          GET /events/:id/checkin/groups/:groupId?scheduleId=
+POST /checkin/records/:id/undo {reason}     (checkin:update)
+GET  /events/:id/checkin/records?locationId&registrationId&search     GET /events/:id/checkin/stats
+GET  /events/:id/checkin/offline-pack       → รายชื่อ + SHA-256 ของ token (ไม่มี token จริง)
+POST /events/:id/checkin/sync {items:[{clientKey, registrationId, occurredAt, locationId?, scheduleId?, action?}]}  (≤500, ย้อนหลังไม่เกิน 72 ชม.)
+
+# การเข้าร่วม
+GET  /events/:id/attendance?scheduleId&status&participantTypeId&search   (attendance:view; meta.summary)
+PUT  /events/:id/attendance/:registrationId {status, note, scheduleId?}  (attendance:update)
+GET  /events/:id/attendance/export?scheduleId   (attendance:export, .xlsx)
+
+# บุคลากรของงาน
+GET  /events/:id/personnel (badge:view)   POST /events/:id/personnel · PATCH/DELETE /event-personnel/:id (event:update)
+GET  /events/:id/personnel/user-lookup?email=
+
+# ป้ายชื่อ
+GET  /badges/placeholders     GET /events/:id/badge-templates     POST /events/:id/badge-templates {nameTh, paper, widthMm, heightMm, fields?, colorRules?}
+GET/PUT/DELETE /badge-templates/:id   (PUT ต้องส่ง version — 409 VERSION_CONFLICT)
+POST /badge-templates/:id/background (multipart PNG/JPG ≤5MB)   GET /badge-templates/:id/background
+POST /events/:id/badge-templates/preview {template, templateId?} → PDF
+GET  /events/:id/badges/candidates?kind=registration|personnel&printed=yes|no&participantTypeId&groupId&search
+POST /events/:id/badge-print-jobs {templateId, mode: BATCH|INSTANT|REPRINT, registrationIds?, personnelIds?, filter?: {participantTypeIds, groupId, includePrinted, includePersonnel}, reason?}
+GET  /events/:id/badge-print-jobs     GET /badge-print-jobs/:id/pdf (badge:print; เปิดซ้ำถูกนับ + audit)
+GET  /registrations/:id/badge-history · /event-personnel/:id/badge-history
+```
+error code ใหม่: `INVALID_QR`, `QR_NOT_FOUND`, `QR_REVOKED`, `WRONG_EVENT`, `EVENT_NOT_ACTIVE`, `CHECKIN_NOT_OPEN`, `CHECKIN_CLOSED`, `PAYMENT_PENDING`, `NOT_CONFIRMED`, `REGISTRATION_INACTIVE`, `NOT_CHECKED_IN` (มี `details.registration` ให้จุดเช็กอินเห็นว่าเป็นใคร), `ALREADY_PRINTED`, `VERSION_CONFLICT`
+
+Real-time: Socket.IO namespace `/checkin` (path `/socket.io`) — ยืนยันตัวตนด้วย cookie `sru_at` (หรือ `auth.token`), `emit('subscribe', {eventId})` → `{ok}` (ตรวจ `checkin:view` ทุกครั้ง), รับ `checkin` {eventId, kind, count, at} — ไม่มีข้อมูลส่วนบุคคล ให้ client ดึง /stats ใหม่
+
 ## Endpoints (P3b — สมัครสมาชิก)
 ```text
 POST /auth/register {email, password (≥10), displayName, phone?}  → 202 (คำตอบเหมือนกันเสมอ ไม่บอกว่าอีเมลมีบัญชีแล้วหรือไม่)

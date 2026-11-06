@@ -10,6 +10,7 @@ import { newIdempotencyKey } from '@sru/api-client';
 import { Money, ThaiDate } from '@/components/Format';
 import { QueryState } from '@/components/QueryState';
 import { StatusTag } from '@/components/StatusTag';
+import { CheckinQrButton } from '@/features/checkin/CheckinQr';
 import { PaymentPanel } from '@/features/payment/PaymentPanel';
 import { useApiMessage } from '@/hooks/useApiMessage';
 import { api } from '@/services/api';
@@ -153,6 +154,17 @@ function Workspace({ g, mode, refresh }: { g: GroupDetailDto; mode: Mode; refres
               <Button type="primary" icon={<SendOutlined />} disabled={g.memberCount < g.settings.minMembers} onClick={() => setSubmitOpen(true)}>
                 ส่งกลุ่ม ({g.memberCount} คน)
               </Button>
+            )}
+            {coordinator && ['PENDING_PAYMENT', 'CONFIRMED'].includes(g.status) && (
+              <CheckinQrButton
+                size="middle"
+                buttonText="QR เช็กอินกลุ่ม"
+                queryKey={['checkin-qr-group', g.id]}
+                load={() => api.get<{ code: string }>(`/groups/${g.id}/checkin-qr`)}
+                title={`${g.groupNo} ${g.name}`}
+                subtitle={g.participantOrganization.nameTh}
+                note={<Typography.Text type="secondary" style={{ fontSize: 13, textAlign: 'center' }}>เจ้าหน้าที่สแกนครั้งเดียวแล้วเลือกสมาชิกที่มาถึงเพื่อเช็กอินพร้อมกัน — สมาชิกแต่ละคนยังใช้ QR ของตนเองได้</Typography.Text>}
+              />
             )}
             {open && (
               <Button danger icon={<StopOutlined />} onClick={() => setCancelOpen(true)}>

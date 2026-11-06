@@ -78,6 +78,9 @@ model User {
   coordinatorOf         OrganizationCoordinator[] @relation("CoordinatorUser")
   groupsCoordinated     RegistrationGroup[]       @relation("GroupCoordinator")
   emailVerifications    EmailVerification[]
+  checkinRecords        CheckinRecord[]           @relation("CheckinActor")
+  eventPersonnel        EventPersonnel[]          @relation("EventPersonnelUser")
+  badgeJobs             BadgePrintJob[]           @relation("BadgeJobRequestedBy")
 
   @@index([status])
   @@map("users")

@@ -33,6 +33,7 @@ const optionalGoogle: Provider = {
   ],
   controllers: [AuthController, SignupController],
   providers: [AuthService, SignupService, JwtStrategy, optionalGoogle, GoogleEnabledGuard],
-  exports: [AuthService, SignupService],
+  // JwtModule is exported for the Socket.IO gateway (same access-token verification as REST).
+  exports: [AuthService, SignupService, JwtModule],
 })
 export class AuthModule {}

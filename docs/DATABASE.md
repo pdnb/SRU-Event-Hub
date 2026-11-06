@@ -76,7 +76,15 @@ Constraint/trigger เพิ่มเติม (เขียนเองใน m
 ## Migration `email_verification` (P3b)
 ตาราง `email_verifications` (เก็บ SHA-256 ของ token, ใช้ครั้งเดียว, หมดอายุ 24 ชม.) · ประกาศ `@@index` ของ `group_import_rows.registration_id` ใน schema เพื่อไม่ให้ `prisma migrate dev` สร้างคำสั่ง DROP
 
+## Migration `checkin_badges` (P4)
+ตาราง: `checkin_locations`, `checkin_tokens`, `checkin_records`, `attendance_records`, `event_personnel`, `badge_templates`, `badge_template_fields`, `badge_color_rules`, `badge_print_jobs`, `badge_prints` · คอลัมน์ `events.checkin_opens_before_minutes` (0–10080, ค่าเริ่มต้น 120), `events.checkin_late_after_minutes` (null = ไม่นับสาย)
+- `checkin_tokens`: เก็บ SHA-256 ของ token เท่านั้น (token = HMAC จาก id ด้วยคีย์ที่ derive จาก `FIELD_ENCRYPTION_KEY` ผ่าน HKDF) · CHECK registration XOR group · partial unique token ที่ยังใช้ได้ 1 อันต่อการลงทะเบียน/กลุ่ม
+- `checkin_records`: append-only (`forbid_update_delete()`) · `client_key` unique (idempotent สำหรับ offline sync) · การยกเลิกเป็นแถว `UNDO` ที่อ้าง `undoes_id` (unique — ยกเลิกซ้ำไม่ได้; CHECK action=UNDO ⇔ มี undoes_id)
+- `attendance_records`: unique `(registration_id, schedule_id) NULLS NOT DISTINCT` (schedule NULL = ทั้งกิจกรรม; ประกาศ map ชื่อเดียวกันใน schema กัน DROP) — คำนวณใหม่จาก records ทุกครั้ง; `is_manual` = เจ้าหน้าที่กำหนด (สแกนจริงภายหลังทับค่า)
+- `badge_prints`: append-only · CHECK registration XOR personnel · unique (subject, print_no) กันสองจุดพิมพ์ป้าย "ครั้งแรก" ซ้ำพร้อมกัน · `badge_print_jobs.template_snapshot` (JSON) ทำให้เปิดไฟล์ซ้ำได้ป้ายเหมือนเดิมแม้แก้แม่แบบ · CHECK REPRINT ต้องมีเหตุผล
+- `badge_templates`: CHECK ขนาด 20–300 มม. · partial unique แม่แบบหลัก 1 อันต่อกิจกรรม
+- ลำดับการล็อก: เช็กอินล็อกเฉพาะแถว `registrations` (ไม่แตะที่นั่ง จึงไม่ deadlock กับการลงทะเบียน/ชำระเงิน)
+
 ## ตารางระยะถัดไป (ออกแบบตาม spec §6)
 - **Payment & Finance (ส่วนที่เหลือ)**: `receipt_stocks` — ข้อมูลออกใบเสร็จ (P2c) เก็บเป็นคอลัมน์ `payment_orders.billing_*` แทนตาราง `billing_infos`
-- **P4**: `checkin_tokens, checkin_records, checkin_locations, attendance_records, badge_templates, badge_template_fields, badge_color_rules, badge_print_jobs, badge_prints, event_personnel`
 - **P5**: `certificate_templates, certificates, certificate_verifications, evaluation_forms, evaluation_questions, evaluation_options, evaluation_responses, evaluation_answers`
