@@ -6,12 +6,12 @@
 |---|---|---|
 | §2 Tech stack | P1 | ดู [VERSIONS.md](VERSIONS.md) (NestJS 11, TS 5.9 ด้วยเหตุผลความเข้ากันได้) |
 | §3 Monorepo | P1 | ✅ |
-| §4.1 Auth & Users | P1 | ✅ `apps/api/src/auth`, `users` (การสมัครเองของผู้ประสานงาน + ยืนยันอีเมล → P3) |
+| §4.1 Auth & Users | P1 | ✅ `apps/api/src/auth`, `users` (การสมัครเองของผู้ประสานงาน + ยืนยันอีเมล → P3b) |
 | §4.2 Organizations | P1 | ✅ tree, หัวหน้า, สมาชิกตามบทบาท (PROPOSER/APPROVER/FINANCE_OFFICER) |
-| §4.3 Events | P1 | ✅ ยกเว้นอัปโหลดรูป/ไฟล์ (P2 พร้อม storage service), ค่าลงทะเบียน ✅ P2a, ตั้งค่ากลุ่ม (P3) |
+| §4.3 Events | P1 | ✅ ยกเว้นอัปโหลดรูป/ไฟล์ (P2 พร้อม storage service), ค่าลงทะเบียน ✅ P2a, ตั้งค่ากลุ่ม ✅ P3a (API) |
 | §4.4 Approval | P1 | ✅ กำหนดขั้นเอง, สายบังคับบัญชา, ขั้นตรวจการเงิน, ประวัติ append-only; UI แก้ workflow → P5 (ปัจจุบันตั้งผ่าน seed/DB) |
-| §4.5 Portal | P1 | ✅ หน้าแรก, ทั้งหมด/เปิดรับ/กำลังจัด/ย้อนหลัง, ปฏิทิน, รายละเอียด, ลงทะเบียน, ตรวจสถานะ, ค้นหา/กรอง, แนะนำ, แชร์ — หน้าชำระเงิน ✅ P2a, กลุ่ม (P3) |
-| §4.6 Registration | P1 | ✅ รายบุคคล, guest, ป้องกันซ้ำ, จำกัดที่นั่ง atomic, waitlist, idempotency, export — §4.6.1 กลุ่ม → P3 |
+| §4.5 Portal | P1 | ✅ หน้าแรก, ทั้งหมด/เปิดรับ/กำลังจัด/ย้อนหลัง, ปฏิทิน, รายละเอียด, ลงทะเบียน, ตรวจสถานะ, ค้นหา/กรอง, แนะนำ, แชร์ — หน้าชำระเงิน ✅ P2a, หน้ากลุ่ม (P3b) |
+| §4.6 Registration | P1 | ✅ รายบุคคล, guest, ป้องกันซ้ำ, จำกัดที่นั่ง atomic, waitlist, idempotency, export — §4.6.1 กลุ่ม ✅ P3a `apps/api/src/groups` (หน้าเว็บ P3b) |
 | §4.7 Payment & Finance | P2a ✅ / P2b ✅ / P2c ✅ | `apps/api/src/payments` — ดู [PAYMENT.md](PAYMENT.md) (แม่แบบเอกสารเป็นค่าชั่วคราว รอแบบฟอร์มจริง FIN-1) |
 | §4.8 QR/Check-in, §4.8.1 Badges, §4.9 Attendance | P4 | |
 | §4.10 Certificates, §4.11 Evaluation | P5 | |

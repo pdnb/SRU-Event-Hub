@@ -64,8 +64,16 @@ Constraint/trigger เพิ่มเติม (เขียนเองใน m
 - `bank_statement_lines`: `amount > 0` และแก้/ลบไม่ได้ (`forbid_amount_change()`), unique (บัญชี, fingerprint) กันนำเข้ารายการซ้ำจากไฟล์ที่ช่วงเวลาทับกัน, CHECK สถานะ AUTO/MANUAL ⇔ มี payment_id, partial unique `payment_id` WHERE AUTO/MANUAL (1 รายการชำระจับคู่ได้ 1 บรรทัด)
 - การจับคู่ทุกครั้งล็อกแถว `bank_accounts` ของบัญชีนั้นก่อน
 
+## Migration `group_registration` (P3a)
+ตาราง: `participant_organizations`, `organization_coordinators`, `event_group_settings`, `registration_groups`, `group_member_invitations`, `group_imports`, `group_import_rows`, `group_change_logs`, `group_consents`, `payment_order_lines` · คอลัมน์: `registrations.group_id`, `payment_orders.group_id` · enum `RegistrationStatus` + `DRAFT`
+- สมาชิกกลุ่มคือแถวใน `registrations` (`source = GROUP`): `DRAFT` = ยังไม่ส่งกลุ่ม ไม่ถือที่นั่ง ไม่อยู่ใน partial unique ของอีเมล (ตรวจซ้ำตอนส่ง และ index จับซ้ำอีกชั้นเมื่อเปลี่ยนสถานะ) และใช้เลขอ้างอิงชั่วคราว `DRAFT-…` — ได้เลข `REG-` ตอนส่ง (ลำดับเลขไม่ข้าม)
+- `payment_orders_payer_xor`: CHECK ใบแจ้งชำระเป็นของการลงทะเบียน **หรือ** กลุ่มอย่างใดอย่างหนึ่ง · `payment_orders_one_live_per_group`: ใบแจ้งที่ยังมีผล 1 ใบต่อกลุ่ม
+- `payment_order_lines`: ค่าลงทะเบียนรายคน (snapshot) แก้/ลบไม่ได้ (`forbid_amount_change()`), `amount >= 0`
+- `group_change_logs`, `group_consents`: append-only (`forbid_update_delete()`)
+- CHECK: จำนวนสมาชิก min/max, จำนวนครั้งใช้ลิงก์เชิญ, เลขผู้เสียภาษีองค์กร 13 หลัก
+- ลำดับการล็อก: `registration_groups` → `events` → `payment_orders` → `payments` (ตรงกับ registration → event → order ของรายบุคคล — `lockPayer()` ใน payments.service)
+
 ## ตารางระยะถัดไป (ออกแบบตาม spec §6)
-- **Payment & Finance (ส่วนที่เหลือ)**: `payment_order_lines` (ใบแจ้งรวมของกลุ่ม P3: CHECK registration_id XOR group_id), `receipt_stocks` — ข้อมูลออกใบเสร็จ (P2c) เก็บเป็นคอลัมน์ `payment_orders.billing_*` แทนตาราง `billing_infos`
-- **P3 Group**: `participant_organizations, organization_coordinators, event_group_settings, registration_groups, group_member_invitations (hash token), group_imports, group_import_rows, group_change_logs, group_consents` + `registrations.group_id`
+- **Payment & Finance (ส่วนที่เหลือ)**: `receipt_stocks` — ข้อมูลออกใบเสร็จ (P2c) เก็บเป็นคอลัมน์ `payment_orders.billing_*` แทนตาราง `billing_infos`
 - **P4**: `checkin_tokens, checkin_records, checkin_locations, attendance_records, badge_templates, badge_template_fields, badge_color_rules, badge_print_jobs, badge_prints, event_personnel`
 - **P5**: `certificate_templates, certificates, certificate_verifications, evaluation_forms, evaluation_questions, evaluation_options, evaluation_responses, evaluation_answers`

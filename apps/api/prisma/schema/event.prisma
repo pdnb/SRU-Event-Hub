@@ -168,6 +168,8 @@ model Event {
   registrationFields RegistrationField[]
   registrations      Registration[]
   waitingList        WaitingList[]
+  groupSetting       EventGroupSetting?
+  registrationGroups RegistrationGroup[]
   venueBookings      VenueBooking[]
   resourceBookings   ResourceBooking[]
 

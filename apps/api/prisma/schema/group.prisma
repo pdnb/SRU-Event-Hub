@@ -1,0 +1,263 @@
+// ───────────────────────── Group registration (spec §4.6.1, P3) ─────────────────────────
+// A coordinator (ผู้ประสานงาน) of an external participant organization (school, agency, company…)
+// registers several people at once. Members are ordinary `registrations` rows with group_id set:
+//   * DRAFT members hold no seat and are invisible to organizers until the group is submitted.
+//   * Submitting reserves every member's seat in ONE statement (all-or-nothing, event row lock)
+//     and issues ONE combined payment order (payment_orders.group_id + payment_order_lines).
+//   * Every change after submission is written to group_change_logs (append-only).
+
+enum ParticipantOrgType {
+  SCHOOL // โรงเรียน
+  UNIVERSITY // สถาบันอุดมศึกษา
+  GOVERNMENT // หน่วยงานราชการ / รัฐวิสาหกิจ
+  LOCAL_GOVERNMENT // องค์กรปกครองส่วนท้องถิ่น
+  PRIVATE // บริษัท / เอกชน
+  COMMUNITY // ชุมชน / มูลนิธิ / สมาคม
+  OTHER
+}
+
+enum RegistrationGroupStatus {
+  DRAFT // members being collected, no seats held
+  PENDING_PAYMENT // seats held, combined order unpaid
+  CONFIRMED
+  CANCELLED
+  EXPIRED // combined order not paid in time → every member's seat released
+}
+
+enum GroupImportStatus {
+  VALIDATED // parsed, rows checked, nothing written to the group yet
+  COMMITTED // valid rows became DRAFT members
+  DISCARDED
+}
+
+enum GroupImportRowStatus {
+  VALID
+  INVALID
+  IMPORTED
+}
+
+enum GroupConsentType {
+  /// The coordinator attests that every member agreed to the privacy notice (on submit).
+  COORDINATOR_ATTESTATION
+  /// A member accepted the privacy notice themselves through an invitation link.
+  MEMBER
+}
+
+/// External organization that sends participants (not part of the university tree).
+model ParticipantOrganization {
+  id           String             @id @default(uuid(7)) @db.Uuid
+  nameTh       String             @map("name_th") @db.VarChar(300)
+  orgType      ParticipantOrgType @map("org_type")
+  /// 13-digit tax id – used as the default juristic receipt addressee (FIN-9/FIN-10).
+  taxId        String?            @map("tax_id") @db.Char(13)
+  branch       String?            @db.VarChar(100)
+  address      String?            @db.VarChar(1000)
+  province     String?            @db.VarChar(100)
+  phone        String?            @db.VarChar(20)
+  email        String?            @db.VarChar(254)
+  /// Checked by an organizer (participant_org:approve). Unverified orgs can still register.
+  verifiedAt   DateTime?          @map("verified_at") @db.Timestamptz(6)
+  verifiedById String?            @map("verified_by_id") @db.Uuid
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById  String?            @map("created_by_id") @db.Uuid
+  updatedById  String?            @map("updated_by_id") @db.Uuid
+  deletedAt    DateTime?          @map("deleted_at") @db.Timestamptz(6)
+
+  coordinators OrganizationCoordinator[]
+  groups       RegistrationGroup[]
+
+  @@index([nameTh])
+  @@map("participant_organizations")
+}
+
+model OrganizationCoordinator {
+  id                        String   @id @default(uuid(7)) @db.Uuid
+  participantOrganizationId String   @map("participant_organization_id") @db.Uuid
+  userId                    String   @map("user_id") @db.Uuid
+  position                  String?  @db.VarChar(200)
+  phone                     String?  @db.VarChar(20)
+  isPrimary                 Boolean  @default(false) @map("is_primary")
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdById               String?  @map("created_by_id") @db.Uuid
+
+  participantOrganization ParticipantOrganization @relation(fields: [participantOrganizationId], references: [id], onDelete: Cascade)
+  user                    User                    @relation("CoordinatorUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([participantOrganizationId, userId])
+  @@index([userId])
+  @@map("organization_coordinators")
+}
+
+/// Per-event group-registration rules. No row (or is_enabled = false) = groups not accepted.
+model EventGroupSetting {
+  eventId                  String    @id @map("event_id") @db.Uuid
+  isEnabled                Boolean   @default(false) @map("is_enabled")
+  minMembers               Int       @default(2) @map("min_members")
+  maxMembers               Int       @default(50) @map("max_members")
+  /// null = unlimited groups per participant organization.
+  maxGroupsPerOrganization Int?      @map("max_groups_per_organization")
+  allowImport              Boolean   @default(true) @map("allow_import")
+  allowInviteLinks         Boolean   @default(true) @map("allow_invite_links")
+  /// Coordinators may substitute / add / remove members until this time (null = event start).
+  memberChangeCloseAt      DateTime? @map("member_change_close_at") @db.Timestamptz(6)
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedById              String?   @map("updated_by_id") @db.Uuid
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("event_group_settings")
+}
+
+model RegistrationGroup {
+  id                        String                  @id @default(uuid(7)) @db.Uuid
+  groupNo                   String                  @unique @map("group_no") @db.VarChar(30) // GRP-2570-000001
+  eventId                   String                  @map("event_id") @db.Uuid
+  participantOrganizationId String                  @map("participant_organization_id") @db.Uuid
+  coordinatorUserId         String                  @map("coordinator_user_id") @db.Uuid
+  name                      String                  @db.VarChar(300)
+  contactPhone              String?                 @map("contact_phone") @db.VarChar(20)
+  note                      String?                 @db.VarChar(1000)
+  status                    RegistrationGroupStatus @default(DRAFT)
+  submittedAt               DateTime?               @map("submitted_at") @db.Timestamptz(6)
+  confirmedAt               DateTime?               @map("confirmed_at") @db.Timestamptz(6)
+  cancelledAt               DateTime?               @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason              String?                 @map("cancel_reason") @db.VarChar(1000)
+  version                   Int                     @default(1)
+  createdAt                 DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  event                   Event                   @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  participantOrganization ParticipantOrganization @relation(fields: [participantOrganizationId], references: [id], onDelete: Restrict)
+  coordinator             User                    @relation("GroupCoordinator", fields: [coordinatorUserId], references: [id], onDelete: Restrict)
+  members                 Registration[]
+  paymentOrders           PaymentOrder[]
+  invitations             GroupMemberInvitation[]
+  imports                 GroupImport[]
+  changeLogs              GroupChangeLog[]
+  consents                GroupConsent[]
+
+  @@index([eventId, status])
+  @@index([participantOrganizationId])
+  @@index([coordinatorUserId])
+  @@map("registration_groups")
+}
+
+/// Invitation link. registration_id set = the member completes their own details;
+/// null = open link, each use adds a new DRAFT member (only while the group is DRAFT).
+model GroupMemberInvitation {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  groupId        String    @map("group_id") @db.Uuid
+  registrationId String?   @map("registration_id") @db.Uuid
+  /// SHA-256 of the token; the token itself is shown to the coordinator once.
+  tokenHash      String    @unique @map("token_hash") @db.Char(64)
+  maxUses        Int       @default(1) @map("max_uses")
+  usedCount      Int       @default(0) @map("used_count")
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(6)
+  lastUsedAt     DateTime? @map("last_used_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdById    String?   @map("created_by_id") @db.Uuid
+
+  group        RegistrationGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  registration Registration?     @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+  @@map("group_member_invitations")
+}
+
+/// Excel import: validate first (rows stored with their errors), then commit valid rows.
+model GroupImport {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  groupId     String            @map("group_id") @db.Uuid
+  fileName    String            @map("file_name") @db.VarChar(300)
+  fileSha256  String            @map("file_sha256") @db.Char(64)
+  status      GroupImportStatus @default(VALIDATED)
+  totalRows   Int               @map("total_rows")
+  validRows   Int               @map("valid_rows")
+  invalidRows Int               @map("invalid_rows")
+  committedAt DateTime?         @map("committed_at") @db.Timestamptz(6)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdById String?           @map("created_by_id") @db.Uuid
+
+  group RegistrationGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  rows  GroupImportRow[]
+
+  @@index([groupId, createdAt])
+  @@map("group_imports")
+}
+
+model GroupImportRow {
+  id             String               @id @default(uuid(7)) @db.Uuid
+  importId       String               @map("import_id") @db.Uuid
+  /// 1-based row number in the sheet (as the user sees it).
+  rowNo          Int                  @map("row_no")
+  data           Json
+  /// { column: message } – null when the row is valid.
+  errors         Json?
+  status         GroupImportRowStatus
+  registrationId String?              @map("registration_id") @db.Uuid
+
+  import GroupImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@unique([importId, rowNo])
+  @@map("group_import_rows")
+}
+
+/// Append-only history of everything that happened to a group (trigger forbids update/delete).
+model GroupChangeLog {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  groupId        String   @map("group_id") @db.Uuid
+  registrationId String?  @map("registration_id") @db.Uuid
+  /// group.create | group.submit | group.cancel | group.expire | member.add | member.update | member.remove | order.reissue | import.commit | invitation.accept …
+  action         String   @db.VarChar(50)
+  before         Json?
+  after          Json?
+  reason         String?  @db.VarChar(1000)
+  actorId        String?  @map("actor_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  group RegistrationGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@index([groupId, createdAt])
+  @@map("group_change_logs")
+}
+
+/// PDPA consent evidence (append-only).
+model GroupConsent {
+  id             String           @id @default(uuid(7)) @db.Uuid
+  groupId        String           @map("group_id") @db.Uuid
+  registrationId String?          @map("registration_id") @db.Uuid
+  consentType    GroupConsentType @map("consent_type")
+  consentVersion String           @map("consent_version") @db.VarChar(30)
+  /// Number of members covered (coordinator attestation) – 1 for a member's own consent.
+  memberCount    Int              @default(1) @map("member_count")
+  userId         String?          @map("user_id") @db.Uuid
+  ip             String?          @db.VarChar(64)
+  userAgent      String?          @map("user_agent") @db.VarChar(500)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  group RegistrationGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  @@index([groupId])
+  @@map("group_consents")
+}
+
+/// One line per member on a combined (group) payment order. Amount is a fee snapshot (immutable).
+model PaymentOrderLine {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  orderId        String   @map("order_id") @db.Uuid
+  registrationId String   @map("registration_id") @db.Uuid
+  feeRateId      String?  @map("fee_rate_id") @db.Uuid
+  feeName        String   @map("fee_name") @db.VarChar(200)
+  amount         Decimal  @db.Decimal(12, 2)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  order        PaymentOrder  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  registration Registration  @relation(fields: [registrationId], references: [id], onDelete: Restrict)
+  feeRate      EventFeeRate? @relation(fields: [feeRateId], references: [id], onDelete: SetNull)
+
+  @@unique([orderId, registrationId])
+  @@index([registrationId])
+  @@map("payment_order_lines")
+}

@@ -15,6 +15,7 @@ import { ResponseEnvelopeInterceptor } from './common/response.interceptor';
 import { Env, validateEnv } from './config/env';
 import { RedisThrottlerStorage } from './common/redis-throttler.storage';
 import { EventsModule } from './events/events.module';
+import { GroupsModule } from './groups/groups.module';
 import { HealthController } from './health/health.controller';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -66,6 +67,7 @@ import { UsersModule } from './users/users.module';
     EventsModule,
     RegistrationsModule,
     PaymentsModule,
+    GroupsModule,
     AdminModule,
   ],
   controllers: [HealthController],

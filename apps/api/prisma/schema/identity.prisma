@@ -47,13 +47,13 @@ model User {
   identities            AuthIdentity[]
   refreshTokens         RefreshToken[]
   loginHistory          LoginHistory[]
-  roles                 UserRole[]           @relation("UserRoles")
-  rolesGranted          UserRole[]           @relation("RoleGrantedBy")
+  roles                 UserRole[]                @relation("UserRoles")
+  rolesGranted          UserRole[]                @relation("RoleGrantedBy")
   organizations         UserOrganization[]
-  headOf                Organization[]       @relation("OrgHead")
-  eventsOwned           Event[]              @relation("EventOwner")
-  eventsCreated         Event[]              @relation("EventCreatedBy")
-  registrations         Registration[]       @relation("RegistrationUser")
+  headOf                Organization[]            @relation("OrgHead")
+  eventsOwned           Event[]                   @relation("EventOwner")
+  eventsCreated         Event[]                   @relation("EventCreatedBy")
+  registrations         Registration[]            @relation("RegistrationUser")
   notifications         Notification[]
   approvalsDone         ApprovalAction[]
   approvalSteps         ApprovalStep[]
@@ -61,20 +61,22 @@ model User {
   eventOrganizer        EventOrganizer[]
   statusChanges         EventStatusHistory[]
   files                 File[]
-  bookings              VenueBooking[]       @relation("BookingRequester")
-  bookingsDecided       VenueBooking[]       @relation("BookingApprover")
-  paymentsSubmitted     Payment[]            @relation("PaymentSubmittedBy")
-  paymentsVerified      Payment[]            @relation("PaymentVerifiedBy")
-  ledgerEntries         PaymentLedgerEntry[] @relation("LedgerCreatedBy")
-  batchesCreated        FinanceBatch[]       @relation("BatchCreatedBy")
-  batchesReceived       FinanceBatch[]       @relation("BatchReceivedBy")
-  receiptsRecorded      ReceiptRecord[]      @relation("ReceiptRecordedBy")
-  cashierSessions       CashierSession[]     @relation("CashierSessionCashier")
-  cashierConfirms       CashierSession[]     @relation("CashierSessionConfirmedBy")
-  refundsRequested      Refund[]             @relation("RefundRequestedBy")
-  refundsDecided        Refund[]             @relation("RefundDecidedBy")
-  statementsUploaded    BankStatement[]      @relation("StatementUploadedBy")
-  statementLinesMatched BankStatementLine[]  @relation("StatementLineMatchedBy")
+  bookings              VenueBooking[]            @relation("BookingRequester")
+  bookingsDecided       VenueBooking[]            @relation("BookingApprover")
+  paymentsSubmitted     Payment[]                 @relation("PaymentSubmittedBy")
+  paymentsVerified      Payment[]                 @relation("PaymentVerifiedBy")
+  ledgerEntries         PaymentLedgerEntry[]      @relation("LedgerCreatedBy")
+  batchesCreated        FinanceBatch[]            @relation("BatchCreatedBy")
+  batchesReceived       FinanceBatch[]            @relation("BatchReceivedBy")
+  receiptsRecorded      ReceiptRecord[]           @relation("ReceiptRecordedBy")
+  cashierSessions       CashierSession[]          @relation("CashierSessionCashier")
+  cashierConfirms       CashierSession[]          @relation("CashierSessionConfirmedBy")
+  refundsRequested      Refund[]                  @relation("RefundRequestedBy")
+  refundsDecided        Refund[]                  @relation("RefundDecidedBy")
+  statementsUploaded    BankStatement[]           @relation("StatementUploadedBy")
+  statementLinesMatched BankStatementLine[]       @relation("StatementLineMatchedBy")
+  coordinatorOf         OrganizationCoordinator[] @relation("CoordinatorUser")
+  groupsCoordinated     RegistrationGroup[]       @relation("GroupCoordinator")
 
   @@index([status])
   @@map("users")

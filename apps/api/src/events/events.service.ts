@@ -338,9 +338,17 @@ export class EventsService {
   async cancel(id: string, reason: string, user: AuthUser, meta: RequestMeta) {
     return this.transition(id, 'CANCELLED', user, meta, { cancelledAt: new Date(), cancelReason: reason }, reason, async (tx) => {
       await tx.registration.updateMany({
-        where: { eventId: id, status: { in: ['PENDING_PAYMENT', 'CONFIRMED', 'WAITLISTED'] } },
+        where: { eventId: id, status: { in: ['DRAFT', 'PENDING_PAYMENT', 'CONFIRMED', 'WAITLISTED'] } },
         data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'กิจกรรมถูกยกเลิก' },
       });
+      // Group registrations (P3): every open group is cancelled with the event; links stop working.
+      const groups = await tx.registrationGroup.findMany({ where: { eventId: id, status: { in: ['DRAFT', 'PENDING_PAYMENT', 'CONFIRMED'] } }, select: { id: true } });
+      if (groups.length) {
+        const ids = groups.map((g) => g.id);
+        await tx.registrationGroup.updateMany({ where: { id: { in: ids } }, data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: 'กิจกรรมถูกยกเลิก' } });
+        await tx.groupMemberInvitation.updateMany({ where: { groupId: { in: ids }, revokedAt: null }, data: { revokedAt: new Date() } });
+        await tx.groupChangeLog.createMany({ data: ids.map((groupId) => ({ groupId, action: 'group.cancel', actorId: user.id, reason: `กิจกรรมถูกยกเลิก: ${reason}` })) });
+      }
       await tx.event.update({ where: { id }, data: { seatsTaken: 0 } });
       // Money side (spec §4.7.6): pending slips are voided, unpaid orders cancelled,
       // paid orders flagged for refund (handled by the refund process).

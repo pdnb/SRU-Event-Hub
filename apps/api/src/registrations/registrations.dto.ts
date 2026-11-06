@@ -49,6 +49,7 @@ export class CreateRegistrationDto {
 export class RegistrationQueryDto extends PageQueryDto {
   @IsOptional() @IsEnum(RegistrationStatus) status?: RegistrationStatus;
   @IsOptional() @IsUUID() participantTypeId?: string;
+  @IsOptional() @IsUUID() groupId?: string;
 }
 
 export class ExportQueryDto {

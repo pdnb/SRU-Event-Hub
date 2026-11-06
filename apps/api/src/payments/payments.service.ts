@@ -30,6 +30,72 @@ export interface UploadedSlip {
 
 export const LIVE_ORDER = ['UNPAID', 'PENDING_VERIFICATION'] as const;
 
+/** Who an order is for: one individual registration, or a registration group (P3 combined order). */
+export interface OrderPayer {
+  registrationId: string | null;
+  groupId: string | null;
+}
+
+/** The registrations an order pays for. */
+export function payeeWhere(o: OrderPayer): Prisma.RegistrationWhereInput {
+  if (o.registrationId) return { id: o.registrationId };
+  if (o.groupId) return { groupId: o.groupId };
+  return { id: { in: [] } };
+}
+
+/**
+ * Locks the payer row (registration or group) – always the first lock of any payment transaction
+ * (global order: registration | group → event → cashier session → order → payment).
+ */
+export async function lockPayer(tx: Tx, o: OrderPayer) {
+  if (o.registrationId) await tx.$queryRaw`SELECT id FROM registrations WHERE id = ${o.registrationId}::uuid FOR UPDATE`;
+  else if (o.groupId) await tx.$queryRaw`SELECT id FROM registration_groups WHERE id = ${o.groupId}::uuid FOR UPDATE`;
+}
+
+/** Order fully paid / waived → its registrations (and group) are confirmed. */
+export async function settlePayees(tx: Tx, o: OrderPayer, now: Date) {
+  await tx.registration.updateMany({
+    where: { ...payeeWhere(o), status: 'PENDING_PAYMENT' },
+    data: { status: 'CONFIRMED', confirmedAt: now, paymentDueAt: null, version: { increment: 1 } },
+  });
+  if (o.groupId) {
+    await tx.registrationGroup.updateMany({
+      where: { id: o.groupId, status: 'PENDING_PAYMENT' },
+      data: { status: 'CONFIRMED', confirmedAt: now, version: { increment: 1 } },
+    });
+  }
+}
+
+/** A cash payment was voided → back to waiting for payment with a new due time. */
+export async function unsettlePayees(tx: Tx, o: OrderPayer, dueAt: Date) {
+  await tx.registration.updateMany({
+    where: { ...payeeWhere(o), status: 'CONFIRMED' },
+    data: { status: 'PENDING_PAYMENT', confirmedAt: null, paymentDueAt: dueAt, version: { increment: 1 } },
+  });
+  if (o.groupId) {
+    await tx.registrationGroup.updateMany({
+      where: { id: o.groupId, status: 'CONFIRMED' },
+      data: { status: 'PENDING_PAYMENT', confirmedAt: null, version: { increment: 1 } },
+    });
+  }
+}
+
+/** Receipt-addressee columns of payment_orders (already validated). */
+export interface BillingColumns {
+  billingType: 'INDIVIDUAL' | 'JURISTIC';
+  billingName: string | null;
+  billingTaxId: string | null;
+  billingBranch: string | null;
+  billingAddress: string | null;
+}
+
+export interface GroupOrderLineInput {
+  registrationId: string;
+  feeRateId: string | null;
+  feeName: string;
+  amount: Prisma.Decimal;
+}
+
 type OrderWithPayments = PaymentOrder & { payments: Payment[] };
 
 interface RegistrationForOrder {
@@ -82,13 +148,6 @@ export class PaymentsService {
   ) {
     // Validate before any write so a bad tax id fails the registration cleanly.
     const billingData = billing ? billingColumns(billing) : {};
-    const [bank, income] = await Promise.all([
-      event.bankAccountId ? tx.bankAccount.findUnique({ where: { id: event.bankAccountId } }) : null,
-      event.incomeCodeId ? tx.incomeCode.findUnique({ where: { id: event.incomeCodeId } }) : null,
-    ]);
-    const bankSnapshot: BankAccountSnapshot | null = bank
-      ? { bankName: bank.bankName, branch: bank.branch, accountNo: bank.accountNo, accountName: bank.accountName, promptPayId: bank.promptPayId }
-      : null;
     const order = await tx.paymentOrder.create({
       data: {
         orderNo: await this.seq.next(tx, 'INV', now),
@@ -99,8 +158,7 @@ export class PaymentsService {
         amount: rate.amount,
         feeRateId: rate.id,
         feeSnapshot: { rateId: rate.id, nameTh: rate.nameTh, amount: rate.amount.toFixed(2) },
-        bankAccountSnapshot: bankSnapshot ? (bankSnapshot as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-        incomeCode: income?.code ?? null,
+        ...(await this.accountSnapshot(tx, event)),
         dueAt: paymentDueAt(now, event.paymentWindowHours, event.startAt),
         ...billingData,
       },
@@ -109,6 +167,66 @@ export class PaymentsService {
       data: { orderId: order.id, entryType: 'CHARGE', amount: rate.amount, reason: rate.nameTh },
     });
     return order;
+  }
+
+  /**
+   * Combined order of a registration group (P3): one line per member (fee snapshot each), one
+   * CHARGE ledger row for the total. Caller holds the group + event row locks. `dueAt` may be
+   * passed to keep the deadline of an order being re-issued after a member change.
+   */
+  async createGroupOrder(
+    tx: Tx,
+    group: { id: string; eventId: string; payerName: string; payerEmail: string },
+    lines: GroupOrderLineInput[],
+    event: { startAt: Date; paymentWindowHours: number; bankAccountId: string | null; incomeCodeId: string | null },
+    now = new Date(),
+    opts: { billing?: BillingColumns; dueAt?: Date } = {},
+  ) {
+    const total = lines.reduce((s, l) => s.plus(l.amount), new Prisma.Decimal(0));
+    if (total.lte(0)) return null;
+    const billingData = opts.billing ?? {};
+    const summary = new Map<string, { nameTh: string; amount: string; count: number }>();
+    for (const l of lines) {
+      const k = `${l.feeName}|${l.amount.toFixed(2)}`;
+      const cur = summary.get(k) ?? { nameTh: l.feeName, amount: l.amount.toFixed(2), count: 0 };
+      cur.count++;
+      summary.set(k, cur);
+    }
+    const order = await tx.paymentOrder.create({
+      data: {
+        orderNo: await this.seq.next(tx, 'INV', now),
+        eventId: group.eventId,
+        groupId: group.id,
+        payerName: group.payerName,
+        payerEmail: group.payerEmail,
+        amount: total,
+        feeSnapshot: { nameTh: `ค่าลงทะเบียนแบบกลุ่ม ${lines.length} คน`, amount: total.toFixed(2), members: lines.length, rates: [...summary.values()] },
+        ...(await this.accountSnapshot(tx, event)),
+        dueAt: opts.dueAt ?? paymentDueAt(now, event.paymentWindowHours, event.startAt),
+        ...billingData,
+      },
+    });
+    await tx.paymentOrderLine.createMany({
+      data: lines.map((l) => ({ orderId: order.id, registrationId: l.registrationId, feeRateId: l.feeRateId, feeName: l.feeName, amount: l.amount })),
+    });
+    await tx.paymentLedgerEntry.create({
+      data: { orderId: order.id, entryType: 'CHARGE', amount: total, reason: `ค่าลงทะเบียนแบบกลุ่ม ${lines.length} คน` },
+    });
+    return order;
+  }
+
+  private async accountSnapshot(tx: Tx, event: { bankAccountId: string | null; incomeCodeId: string | null }) {
+    const [bank, income] = await Promise.all([
+      event.bankAccountId ? tx.bankAccount.findUnique({ where: { id: event.bankAccountId } }) : null,
+      event.incomeCodeId ? tx.incomeCode.findUnique({ where: { id: event.incomeCodeId } }) : null,
+    ]);
+    const snap: BankAccountSnapshot | null = bank
+      ? { bankName: bank.bankName, branch: bank.branch, accountNo: bank.accountNo, accountName: bank.accountName, promptPayId: bank.promptPayId }
+      : null;
+    return {
+      bankAccountSnapshot: snap ? (snap as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+      incomeCode: income?.code ?? null,
+    };
   }
 
   /**
@@ -137,8 +255,19 @@ export class PaymentsService {
 
   /** Closes the live order of a cancelled registration (inside the cancel transaction). */
   async closeOrdersForCancelledRegistration(tx: Tx, registrationId: string, reason: string, actorId: string | null) {
+    return this.closeOrders(tx, { registrationId, groupId: null }, reason, actorId);
+  }
+
+  /**
+   * Closes the live orders of a cancelled registration or group: pending slips are voided, unpaid
+   * orders CANCELLED, paid ones REFUND_PENDING (money goes back through the refund process).
+   */
+  async closeOrders(tx: Tx, payer: OrderPayer, reason: string, actorId: string | null) {
     const orders = await tx.paymentOrder.findMany({
-      where: { registrationId, status: { in: [...LIVE_ORDER, 'PAID'] } },
+      where: {
+        ...(payer.registrationId ? { registrationId: payer.registrationId } : { groupId: payer.groupId ?? '00000000-0000-0000-0000-000000000000' }),
+        status: { in: [...LIVE_ORDER, 'PAID'] },
+      },
       include: { payments: { where: { status: 'SUBMITTED' } } },
     });
     for (const o of orders) {
@@ -164,9 +293,16 @@ export class PaymentsService {
    * SHA-256 against every live payment, stored in the private bucket, and the order moves to
    * PENDING_VERIFICATION. A slip submitted before the due time protects the seat while it is reviewed.
    */
-  async submitSlip(registrationId: string, file: UploadedSlip | undefined, dto: SubmitSlipDto, actorId: string | null, meta: RequestMeta) {
+  async submitSlip(
+    target: string | { groupId: string },
+    file: UploadedSlip | undefined,
+    dto: SubmitSlipDto,
+    actorId: string | null,
+    meta: RequestMeta,
+  ) {
     if (!file?.buffer) throw new AppError('FILE_REQUIRED', 'กรุณาแนบหลักฐานการโอนเงิน', HttpStatus.BAD_REQUEST);
-    const order = await this.prisma.paymentOrder.findFirst({ where: { registrationId, status: { in: [...LIVE_ORDER] } } });
+    const who = typeof target === 'string' ? { registrationId: target } : { groupId: target.groupId };
+    const order = await this.prisma.paymentOrder.findFirst({ where: { ...who, status: { in: [...LIVE_ORDER] } } });
     if (!order) throw Errors.invalidState('ไม่มีรายการที่ต้องชำระสำหรับการลงทะเบียนนี้');
     this.assertCanSubmit(order);
 
@@ -241,12 +377,7 @@ export class PaymentsService {
       await tx.payment.update({ where: { id: p.id }, data: { status: 'VERIFIED', verifiedById: user.id, verifiedAt: now, version: { increment: 1 } } });
       await tx.paymentLedgerEntry.create({ data: { orderId: p.orderId, paymentId: p.id, entryType: 'PAYMENT', amount: p.amount.negated(), createdById: user.id } });
       await tx.paymentOrder.update({ where: { id: p.orderId }, data: { status: 'PAID', paidAt: now, version: { increment: 1 } } });
-      if (ctx.registrationId) {
-        await tx.registration.updateMany({
-          where: { id: ctx.registrationId, status: 'PENDING_PAYMENT' },
-          data: { status: 'CONFIRMED', confirmedAt: now, paymentDueAt: null, version: { increment: 1 } },
-        });
-      }
+      await settlePayees(tx, ctx, now);
       await this.audit.log({ actorId: user.id, action: 'payment.verify', entityType: 'payment', entityId: p.id, before: { status: 'SUBMITTED' }, after: { status: 'VERIFIED', amount: p.amount.toFixed(2) }, meta }, tx);
       return { id: p.id, status: 'VERIFIED' };
     });
@@ -262,9 +393,7 @@ export class PaymentsService {
       const dueAt = extended > ctx.orderDueAt ? extended : ctx.orderDueAt;
       await tx.payment.update({ where: { id: p.id }, data: { status: 'REJECTED', rejectReason: reason, verifiedById: user.id, verifiedAt: now, version: { increment: 1 } } });
       await tx.paymentOrder.update({ where: { id: p.orderId }, data: { status: 'UNPAID', dueAt, version: { increment: 1 } } });
-      if (ctx.registrationId) {
-        await tx.registration.update({ where: { id: ctx.registrationId }, data: { paymentDueAt: dueAt } });
-      }
+      await tx.registration.updateMany({ where: { ...payeeWhere(ctx), status: 'PENDING_PAYMENT' }, data: { paymentDueAt: dueAt } });
       // A rejected slip no longer explains a bank credit: put the statement line back for review.
       await tx.bankStatementLine.updateMany({
         where: { paymentId: p.id, matchStatus: { in: ['AUTO', 'MANUAL'] } },
@@ -278,23 +407,20 @@ export class PaymentsService {
 
   /** Fee waiver (e.g. invited speaker). Needs payment:waive and a reason; recorded as a WAIVER ledger row. */
   async waive(orderId: string, reason: string, user: AuthUser, meta: RequestMeta) {
-    const order = await this.prisma.paymentOrder.findUnique({ where: { id: orderId }, include: { event: true, registration: true } });
+    const order = await this.prisma.paymentOrder.findUnique({ where: { id: orderId }, include: { event: true, registration: true, group: true } });
     if (!order) throw Errors.notFound('ใบแจ้งชำระ');
     await this.access.assertOrg(user, 'payment:waive', order.event.organizationId);
-    if (order.registration?.userId === user.id) throw Errors.forbidden('ไม่สามารถยกเว้นค่าธรรมเนียมให้ตนเองได้ (การแบ่งแยกหน้าที่)');
+    if (order.registration?.userId === user.id || order.group?.coordinatorUserId === user.id) {
+      throw Errors.forbidden('ไม่สามารถยกเว้นค่าธรรมเนียมให้ตนเองได้ (การแบ่งแยกหน้าที่)');
+    }
     return this.prisma.$transaction(async (tx) => {
-      if (order.registrationId) await tx.$queryRaw`SELECT id FROM registrations WHERE id = ${order.registrationId}::uuid FOR UPDATE`;
+      await lockPayer(tx, order);
       const [locked] = await tx.$queryRaw<{ status: string }[]>`SELECT status::text FROM payment_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       if (locked?.status !== 'UNPAID') throw Errors.invalidState('ยกเว้นได้เฉพาะรายการที่ยังไม่ชำระและไม่มีหลักฐานรอตรวจสอบ');
       const now = new Date();
       await tx.paymentLedgerEntry.create({ data: { orderId, entryType: 'WAIVER', amount: order.amount.negated(), reason, createdById: user.id } });
       await tx.paymentOrder.update({ where: { id: orderId }, data: { status: 'WAIVED', closedAt: now, closeReason: reason, version: { increment: 1 } } });
-      if (order.registrationId) {
-        await tx.registration.updateMany({
-          where: { id: order.registrationId, status: 'PENDING_PAYMENT' },
-          data: { status: 'CONFIRMED', confirmedAt: now, paymentDueAt: null, version: { increment: 1 } },
-        });
-      }
+      await settlePayees(tx, order, now);
       await this.audit.log({ actorId: user.id, action: 'payment.waive', entityType: 'payment_order', entityId: orderId, after: { status: 'WAIVED', amount: order.amount.toFixed(2) }, reason, meta }, tx);
       return { id: orderId, status: 'WAIVED' };
     });
@@ -304,19 +430,25 @@ export class PaymentsService {
   private async loadForDecision(paymentId: string, user: AuthUser, perm: 'payment:verify') {
     const p = await this.prisma.payment.findUnique({
       where: { id: paymentId },
-      include: { order: { include: { event: true, registration: true } } },
+      include: { order: { include: { event: true, registration: true, group: true } } },
     });
     if (!p) throw Errors.notFound('รายการชำระเงิน');
     await this.access.assertOrg(user, perm, p.order.event.organizationId);
-    if (p.submittedById === user.id || p.order.registration?.userId === user.id) {
+    if (p.submittedById === user.id || p.order.registration?.userId === user.id || p.order.group?.coordinatorUserId === user.id) {
       throw Errors.forbidden('ผู้ตรวจสอบต้องไม่ใช่ผู้ชำระเงิน (การแบ่งแยกหน้าที่)');
     }
-    return { registrationId: p.order.registrationId, orderId: p.orderId, eventStartAt: p.order.event.startAt, orderDueAt: p.order.dueAt };
+    return {
+      registrationId: p.order.registrationId,
+      groupId: p.order.groupId,
+      orderId: p.orderId,
+      eventStartAt: p.order.event.startAt,
+      orderDueAt: p.order.dueAt,
+    };
   }
 
-  /** Global lock order registration → order → payment (expiry/cancel use the same prefix → no deadlocks). */
-  private async lockSubmitted(tx: Tx, paymentId: string, ctx: { registrationId: string | null; orderId: string }) {
-    if (ctx.registrationId) await tx.$queryRaw`SELECT id FROM registrations WHERE id = ${ctx.registrationId}::uuid FOR UPDATE`;
+  /** Global lock order payer → order → payment (expiry/cancel use the same prefix → no deadlocks). */
+  private async lockSubmitted(tx: Tx, paymentId: string, ctx: OrderPayer & { orderId: string }) {
+    await lockPayer(tx, ctx);
     await tx.$queryRaw`SELECT id FROM payment_orders WHERE id = ${ctx.orderId}::uuid FOR UPDATE`;
     await tx.$queryRaw`SELECT id FROM payments WHERE id = ${paymentId}::uuid FOR UPDATE`;
     const p = await tx.payment.findUniqueOrThrow({ where: { id: paymentId } });
@@ -354,6 +486,7 @@ export class PaymentsService {
               { order: { payerName: { contains: search, mode: 'insensitive' } } },
               { order: { payerEmail: { contains: search.toLowerCase() } } },
               { order: { registration: { referenceNo: search.toUpperCase() } } },
+              { order: { group: { groupNo: search.toUpperCase() } } },
             ],
           }
         : {}),
@@ -362,7 +495,13 @@ export class PaymentsService {
       this.prisma.payment.findMany({
         where,
         include: {
-          order: { include: { event: { select: { id: true, code: true, titleTh: true } }, registration: { select: { referenceNo: true } } } },
+          order: {
+            include: {
+              event: { select: { id: true, code: true, titleTh: true } },
+              registration: { select: { referenceNo: true } },
+              group: { select: { groupNo: true } },
+            },
+          },
           verifiedBy: { select: { displayName: true } },
           batchItems: { where: { isActive: true }, include: { batch: { select: { batchNo: true } } } },
           receipts: { where: { status: { not: 'VOIDED' } } },
@@ -382,7 +521,7 @@ export class PaymentsService {
       payerName: p.order.payerName,
       payerEmail: p.order.payerEmail,
       registrationId: p.order.registrationId,
-      referenceNo: p.order.registration?.referenceNo ?? null,
+      referenceNo: p.order.registration?.referenceNo ?? p.order.group?.groupNo ?? null,
       eventId: p.order.event.id,
       eventCode: p.order.event.code,
       eventTitle: p.order.event.titleTh,

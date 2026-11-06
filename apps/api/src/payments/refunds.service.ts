@@ -200,10 +200,13 @@ export class RefundsService {
    * a refund in progress or a cancelled registration/event still owed money → REFUND_PENDING, else PAID.
    */
   private async syncOrderStatus(tx: Tx, orderId: string): Promise<PaymentOrderStatus> {
-    const order = await tx.paymentOrder.findUniqueOrThrow({ where: { id: orderId }, include: { event: true, registration: true } });
+    const order = await tx.paymentOrder.findUniqueOrThrow({ where: { id: orderId }, include: { event: true, registration: true, group: true } });
     const b = await this.balance(tx, orderId);
     const inFlight = await tx.refund.count({ where: { orderId, status: { in: ['REQUESTED', 'APPROVED'] } } });
-    const owed = order.event.status === 'CANCELLED' || (order.registration && ['CANCELLED', 'EXPIRED'].includes(order.registration.status));
+    const owed =
+      order.event.status === 'CANCELLED' ||
+      (order.registration && ['CANCELLED', 'EXPIRED'].includes(order.registration.status)) ||
+      (order.group && ['CANCELLED', 'EXPIRED'].includes(order.group.status));
     let status: PaymentOrderStatus;
     if (b.paid.greaterThan(0) && b.refunded.greaterThanOrEqualTo(b.paid)) status = 'REFUNDED';
     else if (inFlight) status = 'REFUND_PENDING';

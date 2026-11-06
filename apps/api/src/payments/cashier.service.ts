@@ -17,7 +17,7 @@ import { CASH_TEMPLATE_KEY, CashColumnKey, DEFAULT_CASH_TEMPLATE, DocumentTempla
 import { renderTableXlsx } from './documents/xlsx';
 import { paymentDueAt } from './fee';
 import { CashierQueryDto, CloseSessionDto, OpenSessionDto, PayablesQueryDto, RemitDto } from './payments.dto';
-import { PaymentsService } from './payments.service';
+import { lockPayer, PaymentsService, settlePayees, unsettlePayees } from './payments.service';
 
 const sessionInclude = {
   event: { select: { id: true, code: true, titleTh: true, organizationId: true, startAt: true } },
@@ -152,21 +152,22 @@ export class CashierService {
                 { payerEmail: { contains: search.toLowerCase() } },
                 { orderNo: search.toUpperCase() },
                 { registration: { referenceNo: search.toUpperCase() } },
+                { group: { groupNo: search.toUpperCase() } },
               ],
             }
           : {}),
       },
-      include: { registration: { select: { referenceNo: true, phone: true } } },
+      include: { registration: { select: { referenceNo: true, phone: true } }, group: { select: { groupNo: true, contactPhone: true } } },
       orderBy: { createdAt: 'asc' },
       take: 30,
     });
     return orders.map((o) => ({
       orderId: o.id,
       orderNo: o.orderNo,
-      referenceNo: o.registration?.referenceNo ?? null,
+      referenceNo: o.registration?.referenceNo ?? o.group?.groupNo ?? null,
       payerName: o.payerName,
       payerEmail: o.payerEmail,
-      phone: o.registration?.phone ?? null,
+      phone: o.registration?.phone ?? o.group?.contactPhone ?? null,
       feeName: (o.feeSnapshot as { nameTh?: string }).nameTh ?? '',
       amount: moneyOut(o.amount)!,
       dueAt: o.dueAt.toISOString(),
@@ -187,13 +188,15 @@ export class CashierService {
     if (s.cashierId !== user.id) throw Errors.forbidden('รับเงินได้เฉพาะในกะของตนเอง');
     if (s.status !== 'OPEN') throw Errors.invalidState('กะรับเงินนี้ปิดแล้ว');
     const offlineAt = capturedAt ? this.checkCapturedAt(new Date(capturedAt), s.openedAt) : null;
-    const head = await this.prisma.paymentOrder.findUnique({ where: { id: orderId }, include: { registration: true } });
+    const head = await this.prisma.paymentOrder.findUnique({ where: { id: orderId }, include: { registration: true, group: true } });
     if (!head || head.eventId !== s.eventId) throw Errors.notFound('ใบแจ้งชำระของกิจกรรมนี้');
-    if (head.registration?.userId === user.id) throw Errors.forbidden('ไม่สามารถรับชำระเงินของตนเองได้ (การแบ่งแยกหน้าที่)');
+    if (head.registration?.userId === user.id || head.group?.coordinatorUserId === user.id) {
+      throw Errors.forbidden('ไม่สามารถรับชำระเงินของตนเองได้ (การแบ่งแยกหน้าที่)');
+    }
 
     const payment = await this.prisma.$transaction(async (tx) => {
-      // Lock order registration → session → order (same prefix as expiry / verify).
-      if (head.registrationId) await tx.$queryRaw`SELECT id FROM registrations WHERE id = ${head.registrationId}::uuid FOR UPDATE`;
+      // Lock order payer → session → order (same prefix as expiry / verify).
+      await lockPayer(tx, head);
       await tx.$queryRaw`SELECT id FROM cashier_sessions WHERE id = ${id}::uuid FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM payment_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const [session, order] = await Promise.all([
@@ -229,12 +232,7 @@ export class CashierService {
       });
       await tx.paymentLedgerEntry.create({ data: { orderId, paymentId: p.id, entryType: 'PAYMENT', amount: order.amount.negated(), reason: `รับเงินสดหน้างาน ${session.sessionNo}`, createdById: user.id } });
       await tx.paymentOrder.update({ where: { id: orderId }, data: { status: 'PAID', paidAt: now, version: { increment: 1 } } });
-      if (order.registrationId) {
-        await tx.registration.updateMany({
-          where: { id: order.registrationId, status: 'PENDING_PAYMENT' },
-          data: { status: 'CONFIRMED', confirmedAt: now, paymentDueAt: null, version: { increment: 1 } },
-        });
-      }
+      await settlePayees(tx, order, now);
       await this.audit.log(
         {
           actorId: user.id,
@@ -248,7 +246,7 @@ export class CashierService {
       );
       return p;
     });
-    return { ...this.payments.paymentDto(payment), orderNo: head.orderNo, payerName: head.payerName, referenceNo: head.registration?.referenceNo ?? null, amountText: bahtText(moneyOut(payment.amount)!) };
+    return { ...this.payments.paymentDto(payment), orderNo: head.orderNo, payerName: head.payerName, referenceNo: head.registration?.referenceNo ?? head.group?.groupNo ?? null, amountText: bahtText(moneyOut(payment.amount)!) };
   }
 
   /** Void a cash receipt (wrong person / mistake). Different person from the cashier; session must be OPEN. */
@@ -259,7 +257,7 @@ export class CashierService {
     if (p.submittedById === user.id) throw Errors.forbidden('ผู้อนุมัติยกเลิกรับเงินต้องไม่ใช่ผู้รับเงิน (การแบ่งแยกหน้าที่)');
 
     return this.prisma.$transaction(async (tx) => {
-      if (p.order.registrationId) await tx.$queryRaw`SELECT id FROM registrations WHERE id = ${p.order.registrationId}::uuid FOR UPDATE`;
+      await lockPayer(tx, p.order);
       await tx.$queryRaw`SELECT id FROM cashier_sessions WHERE id = ${p.cashierSessionId}::uuid FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM payment_orders WHERE id = ${p.orderId}::uuid FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM payments WHERE id = ${paymentId}::uuid FOR UPDATE`;
@@ -275,12 +273,7 @@ export class CashierService {
       await tx.payment.update({ where: { id: paymentId }, data: { status: 'VOIDED', voidedById: user.id, voidedAt: now, voidReason: reason, version: { increment: 1 } } });
       await tx.paymentLedgerEntry.create({ data: { orderId: p.orderId, paymentId, entryType: 'REVERSAL', amount: fresh.amount, reason, createdById: user.id } });
       await tx.paymentOrder.update({ where: { id: p.orderId }, data: { status: 'UNPAID', paidAt: null, dueAt, version: { increment: 1 } } });
-      if (p.order.registrationId) {
-        await tx.registration.updateMany({
-          where: { id: p.order.registrationId, status: 'CONFIRMED' },
-          data: { status: 'PENDING_PAYMENT', confirmedAt: null, paymentDueAt: dueAt, version: { increment: 1 } },
-        });
-      }
+      await unsettlePayees(tx, p.order, dueAt);
       await this.audit.log({ actorId: user.id, action: 'cashier.void', entityType: 'payment', entityId: paymentId, before: { status: 'VERIFIED' }, after: { status: 'VOIDED', newDueAt: dueAt }, reason, meta }, tx);
       this.payments.scheduleExpiry({ id: p.orderId, dueAt });
       return { id: paymentId, status: 'VOIDED' };
@@ -333,7 +326,7 @@ export class CashierService {
     if (s.status !== 'OPEN') throw Errors.invalidState('กะรับเงินนี้ปิดแล้ว');
     const orders = await this.prisma.paymentOrder.findMany({
       where: { eventId: s.eventId, status: 'UNPAID' },
-      include: { registration: { select: { referenceNo: true, phone: true } } },
+      include: { registration: { select: { referenceNo: true, phone: true } }, group: { select: { groupNo: true, contactPhone: true } } },
       orderBy: { createdAt: 'asc' },
       take: OFFLINE_PACK_LIMIT,
     });
@@ -349,10 +342,10 @@ export class CashierService {
       payables: orders.map((o) => ({
         orderId: o.id,
         orderNo: o.orderNo,
-        referenceNo: o.registration?.referenceNo ?? null,
+        referenceNo: o.registration?.referenceNo ?? o.group?.groupNo ?? null,
         payerName: o.payerName,
         payerEmail: o.payerEmail,
-        phone: o.registration?.phone ?? null,
+        phone: o.registration?.phone ?? o.group?.contactPhone ?? null,
         feeName: (o.feeSnapshot as { nameTh?: string }).nameTh ?? '',
         amount: moneyOut(o.amount)!,
         dueAt: o.dueAt.toISOString(),

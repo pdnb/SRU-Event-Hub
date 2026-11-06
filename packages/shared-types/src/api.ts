@@ -217,3 +217,137 @@ export interface FinanceBatchDto {
   returnedAt: string | null;
   returnReason: string | null;
 }
+
+// ───────────── Group registration (P3) ─────────────
+
+export interface ParticipantOrganizationDto {
+  id: string;
+  nameTh: string;
+  orgType: string;
+  taxId: string | null;
+  branch: string | null;
+  address: string | null;
+  province: string | null;
+  phone: string | null;
+  email: string | null;
+  verified: boolean;
+  coordinators: { userId: string; displayName: string; email: string; position: string | null; isPrimary: boolean }[];
+  createdAt: string;
+}
+
+export interface EventGroupSettingDto {
+  eventId: string;
+  isEnabled: boolean;
+  minMembers: number;
+  maxMembers: number;
+  maxGroupsPerOrganization: number | null;
+  allowImport: boolean;
+  allowInviteLinks: boolean;
+  memberChangeCloseAt: string | null;
+}
+
+export interface GroupMemberDto {
+  id: string;
+  referenceNo: string | null;
+  status: string;
+  prefix: string | null;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
+  phone: string | null;
+  participantTypeCode: string;
+  participantTypeName: string;
+  studentOrStaffCode: string | null;
+  affiliation: string | null;
+  program: string | null;
+  answers: { key: string; value: string | string[] }[];
+  /** Fee line on the combined order (null on free events / before submission). */
+  feeName: string | null;
+  feeAmount: MoneyString | null;
+  /** The member accepted the privacy notice themselves (invitation link). */
+  selfConsented: boolean;
+  createdAt: string;
+}
+
+export interface GroupInvitationDto {
+  id: string;
+  registrationId: string | null;
+  memberName: string | null;
+  maxUses: number;
+  usedCount: number;
+  expiresAt: string;
+  revoked: boolean;
+  createdAt: string;
+}
+
+export interface GroupSummaryDto {
+  id: string;
+  groupNo: string;
+  name: string;
+  status: string;
+  eventId: string;
+  eventCode: string;
+  eventTitle: string;
+  eventStartAt: string;
+  participantOrganization: { id: string; nameTh: string; verified: boolean };
+  coordinator: { id: string; displayName: string; email: string };
+  contactPhone: string | null;
+  memberCount: number;
+  submittedAt: string | null;
+  confirmedAt: string | null;
+  createdAt: string;
+  payment: PaymentOrderDto | null;
+}
+
+export interface GroupDetailDto extends GroupSummaryDto {
+  note: string | null;
+  cancelReason: string | null;
+  settings: EventGroupSettingDto;
+  /** Members may still be added / changed / removed (setting + event timing + group state). */
+  canChangeMembers: boolean;
+  members: GroupMemberDto[];
+  invitations: GroupInvitationDto[];
+  /** Whether the event charges a fee; total = sum of member lines once submitted. */
+  isPaid: boolean;
+  /** Registration questions of the event (for the member form / import template). */
+  fields: { key: string; labelTh: string; fieldType: string; isRequired: boolean; options: { value: string; labelTh: string }[] }[];
+  participantTypes: { code: string; nameTh: string }[];
+}
+
+export interface GroupImportDto {
+  id: string;
+  fileName: string;
+  status: string;
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  createdAt: string;
+  committedAt: string | null;
+  rows: { rowNo: number; status: string; data: Record<string, string>; errors: Record<string, string> | null }[];
+}
+
+export interface GroupChangeLogDto {
+  id: string;
+  action: string;
+  registrationId: string | null;
+  before: unknown;
+  after: unknown;
+  reason: string | null;
+  actorName: string | null;
+  createdAt: string;
+}
+
+/** What an invitation link shows (only that member's own data, never the rest of the group). */
+export interface GroupInvitationViewDto {
+  groupNo: string;
+  groupName: string;
+  organizationName: string;
+  coordinatorName: string;
+  event: { id: string; code: string; titleTh: string; startAt: string; endAt: string; venueText: string | null };
+  /** null = open link (adds a new member). */
+  member: Omit<GroupMemberDto, 'feeName' | 'feeAmount' | 'selfConsented' | 'createdAt' | 'referenceNo' | 'status'> | null;
+  fields: GroupDetailDto['fields'];
+  participantTypes: GroupDetailDto['participantTypes'];
+  expiresAt: string;
+}

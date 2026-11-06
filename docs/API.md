@@ -73,3 +73,32 @@ POST /events/:id/registrations {..., billing?: {type: INDIVIDUAL|JURISTIC, name,
 ```
 error code ใหม่: `STATEMENT_DUPLICATE`, `PAYMENT_ALREADY_MATCHED`, `APPROVAL_PENDING`, `OFFLINE_CONFLICT`
 
+## Endpoints (P3a — ลงทะเบียนแบบกลุ่ม)
+```text
+# องค์กรผู้ส่งเข้าร่วม (ผู้ใช้ที่เข้าสู่ระบบสร้างได้ และเป็นผู้ประสานงาน)
+GET  /me/participant-orgs        POST /participant-orgs {nameTh, orgType, taxId?, branch?, address?, province?, phone?, email?, position?}
+PUT  /participant-orgs/:id       POST /participant-orgs/:id/coordinators {email, position?}   DELETE /participant-orgs/:id/coordinators/:userId
+GET  /participant-orgs?verified&search (participant_org:view)   POST /participant-orgs/:id/verify · /:id/unverify (participant_org:approve, ห้ามผู้ประสานงานขององค์กรเอง)
+
+# ตั้งค่ากลุ่มของกิจกรรม
+GET  /public/events/:id/group-settings      PUT /events/:id/group-settings {isEnabled, minMembers, maxMembers, maxGroupsPerOrganization?, allowImport, allowInviteLinks, memberChangeCloseAt?} (group:update)
+GET  /events/:id/groups?status&search (group:view; ไม่แสดงฉบับร่างเว้นแต่กรอง status=DRAFT)
+GET  /events/:id/registrations?groupId=…   (ผลลัพธ์มี groupNo/groupName; export มีคอลัมน์เลขที่กลุ่ม/องค์กร)
+
+# ผู้ประสานงาน
+POST /events/:id/groups {participantOrganizationId, name, contactPhone?, note?}   (Idempotency-Key บังคับ)
+GET  /me/groups · /groups/:id · /groups/:id/change-logs          PATCH /groups/:id {name?, contactPhone?, note?}
+POST /groups/:id/members {participantTypeCode, firstName, lastName, email, phone?, …, answers?}
+PUT  /groups/:id/members/:memberId {…, reason}   (หลังส่งกลุ่มต้องมีเหตุผล; เปลี่ยนประเภทผู้เข้าร่วมไม่ได้)
+POST /groups/:id/members/:memberId/remove {reason?}   (หลังส่งกลุ่มต้องมีเหตุผล)
+POST /groups/:id/submit {pdpaAttestation: true, billing?}   (Idempotency-Key บังคับ)
+POST /groups/:id/cancel {reason?}   (ผู้จัดที่มี group:update ยกเลิกได้ ต้องระบุเหตุผล)
+POST /groups/:id/slip (multipart file, transferredAt?, note?)    PATCH /groups/:id/billing {billing}
+GET  /groups/:id/import-template (.xlsx)   POST /groups/:id/imports (multipart .xlsx) → ตรวจทุกแถว
+GET  /groups/:id/imports/:importId   POST /groups/:id/imports/:importId/commit · /discard
+POST /groups/:id/invitations {registrationId?, maxUses?, expiresInDays?} → token (แสดงครั้งเดียว)   POST /groups/:id/invitations/:invId/revoke
+
+# ลิงก์เชิญ (ไม่ต้องเข้าสู่ระบบ; token ส่งใน body เท่านั้น)
+POST /public/group-invitations/view {token}     POST /public/group-invitations/accept {token, pdpaConsent: true, …ข้อมูลสมาชิก}
+```
+error code ใหม่: `GROUP_DISABLED`, `GROUP_LIMIT`, `GROUP_FULL`, `GROUP_SEATS_UNAVAILABLE` (details: available, requested), `DUPLICATE_MEMBER`, `GROUP_MEMBER` (ยกเลิกรายคนไม่ได้ — ต้องผ่านกลุ่ม), `INVITATION_INVALID`, `INVITE_DISABLED`, `IMPORT_DISABLED`

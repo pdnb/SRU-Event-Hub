@@ -9,6 +9,7 @@ export interface Session {
   get: (url: string) => request.Test;
   post: (url: string, body?: object, headers?: Record<string, string>) => request.Test;
   patch: (url: string, body?: object) => request.Test;
+  put: (url: string, body?: object) => request.Test;
   /** multipart POST with one file field named `file`. */
   upload: (url: string, file: Buffer, filename: string, fields?: Record<string, string>) => request.Test;
 }
@@ -25,6 +26,7 @@ export async function login(http: ReturnType<INestApplication['getHttpServer']>,
     get: (url) => withAuth(request(http).get(url)),
     post: (url, body = {}, headers = {}) => withAuth(request(http).post(url)).set(headers).send(body),
     patch: (url, body = {}) => withAuth(request(http).patch(url)).send(body),
+    put: (url, body = {}) => withAuth(request(http).put(url)).send(body),
     upload: (url, file, filename, fields = {}) => {
       let t = withAuth(request(http).post(url));
       for (const [k, v] of Object.entries(fields)) t = t.field(k, v);

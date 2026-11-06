@@ -6,6 +6,7 @@
  * part in production: set SEED_DEMO=false to load only reference data.
  */
 import { seedFinance, seedFinanceDemo } from './finance';
+import { seedGroupsDemo } from './groups';
 import { DEFAULT_BATCH_TEMPLATE, DEFAULT_CASH_TEMPLATE } from '../../src/payments/documents/templates';
 import { DEFAULT_STATEMENT_COLUMNS } from '../../src/payments/reconciliation/statement-parser';
 import 'dotenv/config';
@@ -303,6 +304,7 @@ async function main() {
   if (DEMO) {
     const pw = await seedDemo(orgIds);
     await seedFinanceDemo(prisma);
+    await seedGroupsDemo(prisma);
     console.log('\n✔ Seed complete. Demo accounts: <username>@demo.sru.ac.th or username');
     console.log('  usernames: superadmin, sysadmin, executive, central, sci.dean, sci.admin, sci.manager, sa.manager, sa.head,');
     console.log('             finance, sci.finance, cashier, staff, lecturer, student, coordinator');

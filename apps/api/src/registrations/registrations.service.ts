@@ -16,9 +16,9 @@ import { Prisma, Registration, RegistrationStatus } from '../generated/prisma/cl
 import { PrismaService, Tx } from '../prisma/prisma.service';
 import { selectFeeRate } from '../payments/fee';
 import { BillingInputDto } from '../payments/billing';
-import { PaymentsService } from '../payments/payments.service';
+import { lockPayer, PaymentsService } from '../payments/payments.service';
+import { validateAnswers } from './answers';
 import {
-  AnswerDto,
   CreateRegistrationDto,
   ExportQueryDto,
   RegistrationQueryDto,
@@ -27,7 +27,7 @@ import {
 export const CONSENT_VERSION = '2569-1';
 const SEAT_HOLDING: RegistrationStatus[] = ['PENDING_PAYMENT', 'CONFIRMED'];
 const ACTIVE: RegistrationStatus[] = ['PENDING_PAYMENT', 'CONFIRMED', 'WAITLISTED'];
-interface Promotion {
+export interface Promotion {
   promoted: string[];
   orders: { id: string; dueAt: Date }[];
 }
@@ -81,7 +81,7 @@ export class RegistrationsService {
       where: { eventId, isActive: true },
       include: { options: true },
     });
-    const answers = this.validateAnswers(fields, dto.answers ?? []);
+    const answers = validateAnswers(fields, dto.answers ?? []);
     const participantType = await this.resolveParticipantType(eventId, dto.participantTypeCode);
     const accessToken = randomBytes(24).toString('base64url');
 
@@ -181,6 +181,7 @@ export class RegistrationsService {
   async cancelById(id: string, reason: string | undefined, user: AuthUser, meta: RequestMeta) {
     const reg = await this.prisma.registration.findUnique({ where: { id }, include: { event: true } });
     if (!reg) throw Errors.notFound('การลงทะเบียน');
+    this.assertNotGroupMember(reg);
     const isOwner = reg.userId === user.id;
     if (!isOwner) {
       await this.access.assertOrg(user, 'registration:update', reg.event.organizationId);
@@ -192,6 +193,7 @@ export class RegistrationsService {
 
   async cancelByToken(referenceNo: string, token: string, reason: string | undefined, meta: RequestMeta) {
     const reg = await this.findByToken(referenceNo, token);
+    this.assertNotGroupMember(reg);
     const event = await this.prisma.event.findUniqueOrThrow({ where: { id: reg.eventId } });
     if (!event.allowSelfCancel) throw Errors.forbidden('กิจกรรมนี้ไม่อนุญาตให้ยกเลิกด้วยตนเอง');
     return this.cancel(reg.id, reason, null, meta);
@@ -237,7 +239,7 @@ export class RegistrationsService {
    * On paid events the promoted registrant gets PENDING_PAYMENT and a fresh payment order
    * (fee at promotion time; falls back to the rate valid when they joined the waitlist).
    */
-  private async promoteWaitlist(tx: Tx, eventId: string): Promise<Promotion> {
+  async promoteWaitlist(tx: Tx, eventId: string): Promise<Promotion> {
     const out: Promotion = { promoted: [], orders: [] };
     const [meta] = await tx.$queryRaw<Pick<LockedEvent, 'is_paid' | 'start_at' | 'payment_window_hours' | 'bank_account_id' | 'income_code_id'>[]>`
       SELECT is_paid, start_at, payment_window_hours, bank_account_id::text, income_code_id::text
@@ -302,13 +304,11 @@ export class RegistrationsService {
    * is never expired here – the order row lock makes "slip arrives at the deadline" race-free.
    */
   async expireOrder(orderId: string, now = new Date()): Promise<boolean> {
-    const head = await this.prisma.paymentOrder.findUnique({ where: { id: orderId }, select: { registrationId: true, eventId: true } });
+    const head = await this.prisma.paymentOrder.findUnique({ where: { id: orderId }, select: { registrationId: true, groupId: true, eventId: true } });
     if (!head) return false;
     const res = await this.prisma.$transaction(async (tx) => {
-      // Lock order: registration → event → order (cancel uses registration → event → no deadlocks).
-      if (head.registrationId) {
-        await tx.$queryRaw`SELECT id FROM registrations WHERE id = ${head.registrationId}::uuid FOR UPDATE`;
-      }
+      // Lock order: registration | group → event → order (cancel uses the same prefix → no deadlocks).
+      await lockPayer(tx, head);
       await tx.$queryRaw`SELECT id FROM events WHERE id = ${head.eventId}::uuid FOR UPDATE`;
       await tx.$queryRaw`SELECT id FROM payment_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
       const order = await tx.paymentOrder.findUniqueOrThrow({ where: { id: orderId } });
@@ -329,6 +329,25 @@ export class RegistrationsService {
           await tx.$executeRaw`UPDATE events SET seats_taken = seats_taken - ${reg.seats} WHERE id = ${head.eventId}::uuid`;
           promotion = await this.promoteWaitlist(tx, head.eventId);
         }
+      } else if (order.groupId) {
+        // Combined group order: every member waiting for this payment loses the seat together.
+        const members = await tx.registration.findMany({ where: { groupId: order.groupId, status: 'PENDING_PAYMENT' }, select: { id: true, seats: true } });
+        const seats = members.reduce((s, m) => s + m.seats, 0);
+        await tx.registration.updateMany({
+          where: { id: { in: members.map((m) => m.id) } },
+          data: { status: 'EXPIRED', cancelledAt: now, cancelReason: 'เลยกำหนดชำระเงิน (กลุ่ม)', version: { increment: 1 } },
+        });
+        await tx.registrationGroup.updateMany({
+          where: { id: order.groupId, status: 'PENDING_PAYMENT' },
+          data: { status: 'EXPIRED', cancelledAt: now, cancelReason: 'เลยกำหนดชำระเงิน', version: { increment: 1 } },
+        });
+        await tx.groupChangeLog.create({
+          data: { groupId: order.groupId, action: 'group.expire', after: { orderNo: order.orderNo, members: members.length }, reason: 'เลยกำหนดชำระเงิน' },
+        });
+        if (seats) {
+          await tx.$executeRaw`UPDATE events SET seats_taken = seats_taken - ${seats} WHERE id = ${head.eventId}::uuid`;
+          promotion = await this.promoteWaitlist(tx, head.eventId);
+        }
       }
       await this.audit.log(
         { actorId: null, action: 'payment_order.expire', entityType: 'payment_order', entityId: orderId, before: { status: 'UNPAID', dueAt: order.dueAt }, after: { status: 'EXPIRED', promoted: promotion.promoted } },
@@ -341,7 +360,7 @@ export class RegistrationsService {
     return true;
   }
 
-  private eventForOrder(ev: Pick<LockedEvent, 'start_at' | 'payment_window_hours' | 'bank_account_id' | 'income_code_id'>) {
+  eventForOrder(ev: Pick<LockedEvent,'start_at' | 'payment_window_hours' | 'bank_account_id' | 'income_code_id'>) {
     return { startAt: ev.start_at, paymentWindowHours: ev.payment_window_hours, bankAccountId: ev.bank_account_id, incomeCodeId: ev.income_code_id };
   }
 
@@ -366,7 +385,9 @@ export class RegistrationsService {
     await this.access.assertOrg(user, 'registration:view', event.organizationId);
     const where: Prisma.RegistrationWhereInput = {
       eventId,
-      ...(q.status ? { status: q.status } : {}),
+      // DRAFT = group members the coordinator has not submitted yet – not registrations to the organizer.
+      status: q.status && q.status !== 'DRAFT' ? q.status : { not: 'DRAFT' },
+      ...(q.groupId ? { groupId: q.groupId } : {}),
       ...(q.participantTypeId ? { participantTypeId: q.participantTypeId } : {}),
       ...(q.search
         ? {
@@ -376,16 +397,27 @@ export class RegistrationsService {
               { emailNormalized: { contains: q.search.toLowerCase() } },
               { referenceNo: q.search.toUpperCase() },
               { studentOrStaffCode: q.search },
+              { group: { groupNo: q.search.toUpperCase() } },
             ],
           }
         : {}),
     };
     const [rows, total, counts] = await this.prisma.$transaction([
-      this.prisma.registration.findMany({ where, include: { participantType: true }, skip: q.skip, take: q.perPage, orderBy: { createdAt: q.order } }),
+      this.prisma.registration.findMany({
+        where,
+        include: { participantType: true, group: { select: { groupNo: true, name: true } } },
+        skip: q.skip,
+        take: q.perPage,
+        orderBy: { createdAt: q.order },
+      }),
       this.prisma.registration.count({ where }),
-      this.prisma.registration.groupBy({ by: ['status'], where: { eventId }, _count: { _all: true }, orderBy: { status: 'asc' } }),
+      this.prisma.registration.groupBy({ by: ['status'], where: { eventId, status: { not: 'DRAFT' } }, _count: { _all: true }, orderBy: { status: 'asc' } }),
     ]);
-    const page = Paginated.of(rows.map((r) => this.toDto(r, r.participantType.code, null)), total, q);
+    const page = Paginated.of(
+      rows.map((r) => ({ ...this.toDto(r, r.participantType.code, null), groupNo: r.group?.groupNo ?? null, groupName: r.group?.name ?? null })),
+      total,
+      q,
+    );
     return Object.assign(page, {
       meta: { ...page.meta, statusCounts: Object.fromEntries(counts.map((c) => [c.status, (c._count as { _all: number })._all])) },
     });
@@ -396,15 +428,20 @@ export class RegistrationsService {
     await this.access.assertOrg(user, 'registration:export', event.organizationId);
     const fields = await this.prisma.registrationField.findMany({ where: { eventId, isActive: true }, orderBy: { sortOrder: 'asc' }, include: { options: true } });
     const rows = await this.prisma.registration.findMany({
-      where: { eventId, ...(q.status ? { status: q.status } : {}) },
-      include: { participantType: true, answers: { include: { option: true } } },
+      where: { eventId, status: q.status && q.status !== 'DRAFT' ? q.status : { not: 'DRAFT' } },
+      include: {
+        participantType: true,
+        answers: { include: { option: true } },
+        group: { select: { groupNo: true, participantOrganization: { select: { nameTh: true } } } },
+      },
       orderBy: { createdAt: 'asc' },
     });
 
-    const header = ['ลำดับ', 'เลขอ้างอิง', 'สถานะ', 'คำนำหน้า', 'ชื่อ', 'นามสกุล', 'อีเมล', 'โทรศัพท์', 'รหัสนักศึกษา/บุคลากร', 'หน่วยงาน/คณะ', 'หลักสูตร/สาขา', 'ประเภทผู้เข้าร่วม', 'วันที่ลงทะเบียน', ...fields.map((f) => f.labelTh)];
+    const header = ['ลำดับ', 'เลขอ้างอิง', 'สถานะ', 'คำนำหน้า', 'ชื่อ', 'นามสกุล', 'อีเมล', 'โทรศัพท์', 'รหัสนักศึกษา/บุคลากร', 'หน่วยงาน/คณะ', 'หลักสูตร/สาขา', 'ประเภทผู้เข้าร่วม', 'วันที่ลงทะเบียน', 'เลขที่กลุ่ม', 'องค์กรที่ส่งเข้าร่วม', ...fields.map((f) => f.labelTh)];
     const data = rows.map((r, i) => [
       i + 1, r.referenceNo, r.status, r.prefix ?? '', r.firstName, r.lastName, r.email, r.phone ?? '', r.studentOrStaffCode ?? '',
       r.affiliation ?? '', r.program ?? '', r.participantType.nameTh, formatThaiDateTime(r.createdAt),
+      r.group?.groupNo ?? '', r.group?.participantOrganization.nameTh ?? '',
       ...fields.map((f) => r.answers.filter((a) => a.fieldId === f.id).map((a) => a.option?.labelTh ?? a.valueText ?? '').join(', ')),
     ].map(sanitizeSpreadsheetCell));
 
@@ -431,7 +468,7 @@ export class RegistrationsService {
 
   async mine(user: AuthUser) {
     const rows = await this.prisma.registration.findMany({
-      where: { userId: user.id },
+      where: { userId: user.id, status: { not: 'DRAFT' } },
       include: {
         participantType: true,
         event: { select: { id: true, code: true, titleTh: true, startAt: true, endAt: true, venueText: true, status: true, allowSelfCancel: true } },
@@ -474,6 +511,13 @@ export class RegistrationsService {
 
   // ───────────── helpers ─────────────
 
+  /** Group members are cancelled through the group (seat + combined order are managed together). */
+  private assertNotGroupMember(reg: { groupId: string | null }) {
+    if (reg.groupId) {
+      throw new AppError('GROUP_MEMBER', 'ผู้ลงทะเบียนนี้อยู่ในการลงทะเบียนแบบกลุ่ม กรุณาแจ้งผู้ประสานงานกลุ่มหรือจัดการผ่านหน้ากลุ่ม', HttpStatus.CONFLICT);
+    }
+  }
+
   private async findByToken(referenceNo: string, token: string) {
     const reg = await this.prisma.registration.findUnique({ where: { referenceNo } });
     // Same error for "not found" and "wrong token" so references can't be enumerated.
@@ -483,56 +527,13 @@ export class RegistrationsService {
     return reg;
   }
 
-  private async resolveParticipantType(eventId: string, code: string) {
+  async resolveParticipantType(eventId: string, code: string) {
     const allowed = await this.prisma.eventParticipantType.findMany({ where: { eventId }, include: { participantType: true } });
     const pt = allowed.length
       ? allowed.find((a) => a.participantType.code === code)?.participantType
       : await this.prisma.participantType.findFirst({ where: { code, isActive: true } });
     if (!pt) throw Errors.validation('ประเภทผู้เข้าร่วมนี้ไม่สามารถลงทะเบียนกิจกรรมนี้ได้');
     return pt;
-  }
-
-  private validateAnswers(
-    fields: Prisma.RegistrationFieldGetPayload<{ include: { options: true } }>[],
-    answers: AnswerDto[],
-  ): Prisma.RegistrationAnswerCreateWithoutRegistrationInput[] {
-    const byKey = new Map(answers.map((a) => [a.key, a.value]));
-    const errors: Record<string, string> = {};
-    const out: Prisma.RegistrationAnswerCreateWithoutRegistrationInput[] = [];
-
-    for (const f of fields) {
-      const raw = byKey.get(f.key);
-      const values = (Array.isArray(raw) ? raw : raw == null || raw === '' ? [] : [raw]).map((v) => String(v).trim()).filter(Boolean);
-      if (!values.length) {
-        if (f.isRequired) errors[f.key] = `กรุณากรอก ${f.labelTh}`;
-        continue;
-      }
-      const multi = f.fieldType === 'MULTISELECT' || f.fieldType === 'CHECKBOX';
-      if (!multi && values.length > 1) {
-        errors[f.key] = 'เลือกได้เพียงค่าเดียว';
-        continue;
-      }
-      if (f.options.length) {
-        for (const v of values) {
-          const opt = f.options.find((o) => o.value === v);
-          if (!opt) errors[f.key] = 'ตัวเลือกไม่ถูกต้อง';
-          else out.push({ field: { connect: { id: f.id } }, option: { connect: { id: opt.id } } });
-        }
-        continue;
-      }
-      const v = values[0]!;
-      const max = f.maxLength ?? (f.fieldType === 'TEXTAREA' ? 5000 : 500);
-      if (v.length > max) errors[f.key] = `ยาวเกิน ${max} ตัวอักษร`;
-      else if (f.fieldType === 'NUMBER' && !/^-?\d+(\.\d+)?$/.test(v)) errors[f.key] = 'ต้องเป็นตัวเลข';
-      else if (f.fieldType === 'EMAIL' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) errors[f.key] = 'อีเมลไม่ถูกต้อง';
-      else if (f.fieldType === 'PHONE' && !/^0\d{8,9}$/.test(v)) errors[f.key] = 'เบอร์โทรศัพท์ไม่ถูกต้อง';
-      else if (f.fieldType === 'DATE' && Number.isNaN(Date.parse(v))) errors[f.key] = 'วันที่ไม่ถูกต้อง';
-      else out.push({ field: { connect: { id: f.id } }, valueText: v });
-    }
-    const unknown = answers.filter((a) => !fields.some((f) => f.key === a.key)).map((a) => a.key);
-    if (unknown.length) errors._unknown = `ไม่รู้จักฟิลด์: ${unknown.join(', ')}`;
-    if (Object.keys(errors).length) throw Errors.validation('ข้อมูลแบบฟอร์มไม่ถูกต้อง', errors);
-    return out;
   }
 
   private async waitlistPosition(registrationId: string): Promise<number | null> {

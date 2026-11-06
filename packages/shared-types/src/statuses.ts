@@ -29,6 +29,8 @@ export const ApprovalStatus = {
 export type ApprovalStatus = (typeof ApprovalStatus)[keyof typeof ApprovalStatus];
 
 export const RegistrationStatus = {
+  /** Group member not yet submitted by the coordinator (holds no seat). */
+  DRAFT: 'DRAFT',
   PENDING_PAYMENT: 'PENDING_PAYMENT',
   CONFIRMED: 'CONFIRMED',
   WAITLISTED: 'WAITLISTED',
@@ -37,12 +39,13 @@ export const RegistrationStatus = {
 } as const;
 export type RegistrationStatus = (typeof RegistrationStatus)[keyof typeof RegistrationStatus];
 
+/** Registration group (P3). Mirrors Prisma RegistrationGroupStatus. */
 export const GroupStatus = {
   DRAFT: 'DRAFT',
-  SUBMITTED: 'SUBMITTED',
+  PENDING_PAYMENT: 'PENDING_PAYMENT',
   CONFIRMED: 'CONFIRMED',
-  PARTIALLY_CONFIRMED: 'PARTIALLY_CONFIRMED',
   CANCELLED: 'CANCELLED',
+  EXPIRED: 'EXPIRED',
 } as const;
 export type GroupStatus = (typeof GroupStatus)[keyof typeof GroupStatus];
 
@@ -160,5 +163,8 @@ export const STATUS_META_BY_KIND: Record<string, Record<string, { label: string;
   payment: { SUBMITTED: { label: 'รอตรวจสอบ', color: 'processing' } },
   refund: { PAID: { label: 'คืนเงินแล้ว', color: 'green' }, APPROVED: { label: 'อนุมัติแล้ว รอจ่ายคืน', color: 'cyan' } },
   cashier: { CLOSED: { label: 'ปิดกะแล้ว', color: 'orange' }, CONFIRMED: { label: 'ยืนยันยอดแล้ว', color: 'green' } },
+  registration: { DRAFT: { label: 'ร่าง (ยังไม่ส่งกลุ่ม)', color: 'default' } },
+  group: { DRAFT: { label: 'กำลังรวบรวมรายชื่อ', color: 'default' }, EXPIRED: { label: 'หมดเวลาชำระ', color: 'default' } },
+  import: { VALIDATED: { label: 'ตรวจสอบแล้ว รอนำเข้า', color: 'gold' }, COMMITTED: { label: 'นำเข้าแล้ว', color: 'green' }, DISCARDED: { label: 'ยกเลิก', color: 'default' } },
   batch: { SUBMITTED: { label: 'ส่งกองคลังแล้ว', color: 'blue' } },
 };
