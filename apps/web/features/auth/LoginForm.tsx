@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Card, Divider, Form, Input, Typography } from 'antd';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { ApiError } from '@sru/api-client';
 import { loginSchema, type LoginInput } from '@sru/validation';
@@ -41,6 +42,10 @@ export function LoginForm() {
     },
   });
   const oauthError = params.get('error');
+  const [username, setUsername] = useState('');
+  const resend = useMutation({ mutationFn: () => api.auth.resendVerification(username) });
+  const notVerified = login.error instanceof ApiError && login.error.code === 'EMAIL_NOT_VERIFIED';
+  const next = params.get('next');
 
   return (
     <Card style={{ width: '100%', maxWidth: 420 }}>
@@ -52,7 +57,19 @@ export function LoginForm() {
       </div>
       {oauthError && <Alert type="error" showIcon title={OAUTH_ERRORS[oauthError] ?? 'เข้าสู่ระบบไม่สำเร็จ'} style={{ marginBottom: 16 }} />}
       {login.isError && (
-        <Alert type="error" showIcon title={login.error instanceof ApiError ? login.error.message : 'เข้าสู่ระบบไม่สำเร็จ'} style={{ marginBottom: 16 }} />
+        <Alert
+          type="error"
+          showIcon
+          title={login.error instanceof ApiError ? login.error.message : 'เข้าสู่ระบบไม่สำเร็จ'}
+          style={{ marginBottom: 16 }}
+          action={
+            notVerified && (
+              <Button size="small" loading={resend.isPending} disabled={resend.isSuccess} onClick={() => resend.mutate()}>
+                {resend.isSuccess ? 'ส่งแล้ว' : 'ส่งลิงก์ใหม่'}
+              </Button>
+            )
+          }
+        />
       )}
       {providers.data?.google && (
         <>
@@ -62,7 +79,13 @@ export function LoginForm() {
           <Divider plain>หรือ</Divider>
         </>
       )}
-      <Form layout="vertical" onFinish={handleSubmit((v) => login.mutate(v))}>
+      <Form
+        layout="vertical"
+        onFinish={handleSubmit((v) => {
+          setUsername(v.username);
+          login.mutate(v);
+        })}
+      >
         <RhfField control={control} name="username" label="ชื่อผู้ใช้หรืออีเมล">
           {(f) => <Input {...f} value={f.value as string} prefix={<UserOutlined />} size="large" autoComplete="username" autoFocus />}
         </RhfField>
@@ -73,6 +96,12 @@ export function LoginForm() {
           เข้าสู่ระบบ
         </Button>
       </Form>
+      {providers.data?.selfRegistration && (
+        <Typography.Paragraph style={{ textAlign: 'center', marginTop: 16, marginBottom: 0 }}>
+          บุคคลภายนอก / ผู้ประสานงานองค์กร ยังไม่มีบัญชี?{' '}
+          <Link href={next ? `/register?next=${encodeURIComponent(safeNext(next))}` : '/register'}>สมัครสมาชิก</Link>
+        </Typography.Paragraph>
+      )}
       <div style={{ textAlign: 'center', marginTop: 16 }}>
         <Link href="/">← กลับหน้าแรก</Link>
       </div>

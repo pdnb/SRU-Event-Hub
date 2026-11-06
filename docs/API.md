@@ -102,3 +102,11 @@ POST /groups/:id/invitations {registrationId?, maxUses?, expiresInDays?} → tok
 POST /public/group-invitations/view {token}     POST /public/group-invitations/accept {token, pdpaConsent: true, …ข้อมูลสมาชิก}
 ```
 error code ใหม่: `GROUP_DISABLED`, `GROUP_LIMIT`, `GROUP_FULL`, `GROUP_SEATS_UNAVAILABLE` (details: available, requested), `DUPLICATE_MEMBER`, `GROUP_MEMBER` (ยกเลิกรายคนไม่ได้ — ต้องผ่านกลุ่ม), `INVITATION_INVALID`, `INVITE_DISABLED`, `IMPORT_DISABLED`
+
+## Endpoints (P3b — สมัครสมาชิก)
+```text
+POST /auth/register {email, password (≥10), displayName, phone?}  → 202 (คำตอบเหมือนกันเสมอ ไม่บอกว่าอีเมลมีบัญชีแล้วหรือไม่)
+POST /auth/resend-verification {email} → 202     POST /auth/verify-email {token} → {verified, email}
+GET  /auth/providers → {google, selfRegistration}
+```
+บัญชีที่สมัครเองเป็น `PENDING_VERIFICATION` จนกว่าจะยืนยันอีเมล — login ด้วยรหัสผ่านที่ถูกต้องได้ `403 EMAIL_NOT_VERIFIED` · อีเมลโดเมนมหาวิทยาลัย (`GOOGLE_ALLOWED_DOMAINS`) ได้ `USE_SSO` · ปิดการสมัครด้วย `SELF_REGISTRATION_ENABLED=false` และปิดอัตโนมัติใน production ถ้าไม่ได้ตั้ง `SMTP_URL`

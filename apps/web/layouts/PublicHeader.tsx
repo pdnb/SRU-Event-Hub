@@ -1,7 +1,7 @@
 'use client';
 
-import { CalendarOutlined, LoginOutlined, MenuOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
-import { Button, ConfigProvider, Drawer, Flex, Grid, Menu } from 'antd';
+import { CalendarOutlined, DashboardOutlined, DownOutlined, FormOutlined, LoginOutlined, MenuOutlined, SearchOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
+import { Button, ConfigProvider, Drawer, Dropdown, Flex, Grid, Menu } from 'antd';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
@@ -27,11 +27,20 @@ export function PublicHeader() {
   const selected = NAV.filter((n) => n.key === path).map((n) => n.key);
 
   const account = me.data ? (
-    <Link href="/admin">
+    <Dropdown
+      menu={{
+        items: [
+          { key: '/my/registrations', icon: <FormOutlined />, label: <Link href="/my/registrations">การลงทะเบียนของฉัน</Link> },
+          { key: '/my/groups', icon: <TeamOutlined />, label: <Link href="/my/groups">ลงทะเบียนแบบกลุ่มของฉัน</Link> },
+          { type: 'divider' },
+          { key: '/admin', icon: <DashboardOutlined />, label: <Link href="/admin">ระบบจัดการ</Link> },
+        ],
+      }}
+    >
       <Button type="primary" icon={<UserOutlined />}>
-        {me.data.displayName}
+        {me.data.displayName} <DownOutlined />
       </Button>
-    </Link>
+    </Dropdown>
   ) : (
     <Link href="/login">
       <Button type="primary" icon={<LoginOutlined />}>

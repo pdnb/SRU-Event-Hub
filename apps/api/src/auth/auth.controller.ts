@@ -9,6 +9,7 @@ import { CurrentUser, Public, ReqMeta, type RequestMeta } from '../common/decora
 import { AppError } from '../common/errors';
 import type { Env } from '../config/env';
 import { AuthService, IssuedTokens } from './auth.service';
+import { SignupService } from './signup.service';
 import type { AuthUser } from './auth.types';
 import { clearAuthCookies, CookieConfig, REFRESH_COOKIE, setAuthCookies } from './cookies';
 import { GoogleEnabledGuard, type GoogleProfile } from './google.strategy';
@@ -34,6 +35,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly config: ConfigService<Env, true>,
+    private readonly signup: SignupService,
   ) {
     this.cookieCfg = {
       secure: config.get('COOKIE_SECURE', { infer: true }),
@@ -94,7 +96,7 @@ export class AuthController {
   @Public()
   @Get('providers')
   providers() {
-    return { google: Boolean(this.config.get('GOOGLE_CLIENT_ID', { infer: true })) };
+    return { google: Boolean(this.config.get('GOOGLE_CLIENT_ID', { infer: true })), selfRegistration: this.signup.enabled };
   }
 
   @Public()

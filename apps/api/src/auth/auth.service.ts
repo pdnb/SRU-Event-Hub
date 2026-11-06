@@ -74,6 +74,11 @@ export class AuthService {
       });
       throw await fail('bad_password', user.id);
     }
+    if (user.status === 'PENDING_VERIFICATION') {
+      // The password was correct, so telling the owner why is not an enumeration leak.
+      await fail('status_pending_verification', user.id);
+      throw new AppError('EMAIL_NOT_VERIFIED', 'กรุณายืนยันอีเมลก่อนเข้าสู่ระบบ (ตรวจสอบลิงก์ในกล่องจดหมาย หรือขอลิงก์ใหม่)', HttpStatus.FORBIDDEN);
+    }
     if (user.status !== 'ACTIVE') throw await fail(`status_${user.status.toLowerCase()}`, user.id);
 
     // Transparently upgrade hashes created with weaker parameters.

@@ -12,6 +12,7 @@ import { QueryState } from '@/components/QueryState';
 import { StatusTag } from '@/components/StatusTag';
 import { EDITABLE, POST_APPROVAL_EDITABLE, type AdminEventDto } from '@/features/events/admin-event';
 import { FeeChangeDialog, FeeComparison, type PendingFeeChange } from '@/features/events/FeeChange';
+import { EventGroupsTab } from '@/features/groups/EventGroupsTab';
 import { RegistrationsTable } from '@/features/registration/RegistrationsTable';
 import { useApiMessage } from '@/hooks/useApiMessage';
 import { useCan, useMe } from '@/hooks/useMe';
@@ -252,6 +253,7 @@ export default function AdminEventDetailPage() {
                   ),
                 },
                 ...(can('registration:view') ? [{ key: 'reg', label: `ผู้ลงทะเบียน (${e.seatsTaken})`, children: <Card><RegistrationsTable eventId={id} /></Card> }] : []),
+                ...(can('group:view') ? [{ key: 'groups', label: 'ลงทะเบียนแบบกลุ่ม', children: <EventGroupsTab eventId={id} startAt={e.startAt} capacity={e.capacity} /> }] : []),
                 {
                   key: 'approval',
                   label: 'ประวัติการอนุมัติ',

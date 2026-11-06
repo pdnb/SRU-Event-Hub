@@ -24,6 +24,8 @@ async function download(eventId: string, format: 'xlsx' | 'csv', status?: string
   URL.revokeObjectURL(url);
 }
 
+type RegRow = RegistrationDto & { groupNo?: string | null; groupName?: string | null };
+
 export function RegistrationsTable({ eventId }: { eventId: string }) {
   const can = useCan();
   const qc = useQueryClient();
@@ -32,7 +34,7 @@ export function RegistrationsTable({ eventId }: { eventId: string }) {
   const [search, setSearch] = useState('');
   const list = useQuery({
     queryKey: ['registrations', eventId, q],
-    queryFn: () => api.getPage<RegistrationDto>(`/events/${eventId}/registrations`, q),
+    queryFn: () => api.getPage<RegRow>(`/events/${eventId}/registrations`, q),
     placeholderData: keepPreviousData,
   });
   const cancel = useMutation({
@@ -61,7 +63,7 @@ export function RegistrationsTable({ eventId }: { eventId: string }) {
           <Input
             allowClear
             prefix={<SearchOutlined />}
-            placeholder="ค้นหาชื่อ อีเมล เลขอ้างอิง รหัสนักศึกษา"
+            placeholder="ค้นหาชื่อ อีเมล เลขอ้างอิง รหัสนักศึกษา เลขที่กลุ่ม"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -89,11 +91,11 @@ export function RegistrationsTable({ eventId }: { eventId: string }) {
           )}
         </Col>
       </Row>
-      <Table<RegistrationDto>
+      <Table<RegRow>
         rowKey="id"
         loading={list.isFetching}
         dataSource={list.data?.items}
-        scroll={{ x: 900 }}
+        scroll={{ x: 1060 }}
         locale={{ emptyText: 'ยังไม่มีผู้ลงทะเบียน' }}
         pagination={{ current: q.page, pageSize: q.perPage, total: list.data?.meta.total, showTotal: (t) => `ทั้งหมด ${t} รายการ`, onChange: (page, perPage) => setQ({ ...q, page, perPage }) }}
         columns={[
@@ -101,6 +103,7 @@ export function RegistrationsTable({ eventId }: { eventId: string }) {
           { title: 'ชื่อ-นามสกุล', dataIndex: 'fullName' },
           { title: 'อีเมล', dataIndex: 'email', ellipsis: true },
           { title: 'โทรศัพท์', dataIndex: 'phone', width: 120, render: (p) => p ?? '-' },
+          { title: 'กลุ่ม', dataIndex: 'groupNo', width: 170, render: (g, r) => (g ? <Typography.Text title={r.groupName ?? undefined}>{g}</Typography.Text> : '-') },
           { title: 'วันที่ลงทะเบียน', dataIndex: 'createdAt', width: 180, render: (d) => <ThaiDate value={d} time /> },
           { title: 'สถานะ', dataIndex: 'status', width: 130, render: (s) => <StatusTag status={s} /> },
           {
@@ -108,6 +111,7 @@ export function RegistrationsTable({ eventId }: { eventId: string }) {
             width: 90,
             render: (_, r) =>
               can('registration:update') &&
+              !r.groupNo &&
               ['CONFIRMED', 'WAITLISTED', 'PENDING_PAYMENT'].includes(r.status) && (
                 <Popconfirm title="ยกเลิกการลงทะเบียนนี้?" description="ที่นั่งจะถูกส่งต่อให้ผู้อยู่ในรายชื่อสำรอง" okText="ยืนยัน" cancelText="ไม่" okButtonProps={{ danger: true }} onConfirm={() => cancel.mutate(r.id)}>
                   <Button size="small" danger type="link">

@@ -73,6 +73,9 @@ Constraint/trigger เพิ่มเติม (เขียนเองใน m
 - CHECK: จำนวนสมาชิก min/max, จำนวนครั้งใช้ลิงก์เชิญ, เลขผู้เสียภาษีองค์กร 13 หลัก
 - ลำดับการล็อก: `registration_groups` → `events` → `payment_orders` → `payments` (ตรงกับ registration → event → order ของรายบุคคล — `lockPayer()` ใน payments.service)
 
+## Migration `email_verification` (P3b)
+ตาราง `email_verifications` (เก็บ SHA-256 ของ token, ใช้ครั้งเดียว, หมดอายุ 24 ชม.) · ประกาศ `@@index` ของ `group_import_rows.registration_id` ใน schema เพื่อไม่ให้ `prisma migrate dev` สร้างคำสั่ง DROP
+
 ## ตารางระยะถัดไป (ออกแบบตาม spec §6)
 - **Payment & Finance (ส่วนที่เหลือ)**: `receipt_stocks` — ข้อมูลออกใบเสร็จ (P2c) เก็บเป็นคอลัมน์ `payment_orders.billing_*` แทนตาราง `billing_infos`
 - **P4**: `checkin_tokens, checkin_records, checkin_locations, attendance_records, badge_templates, badge_template_fields, badge_color_rules, badge_print_jobs, badge_prints, event_personnel`

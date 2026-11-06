@@ -50,7 +50,7 @@ const MENU: Item[] = [
     icon: <FormOutlined />,
     children: [
       { key: '/admin/registrations', label: 'รายบุคคล', icon: null, perm: 'registration:view' },
-      { key: 'groups', label: 'กลุ่ม / องค์กร', icon: null, phase: 'P3' },
+      { key: '/admin/participant-orgs', label: 'องค์กรผู้ส่งเข้าร่วม', icon: null, perm: 'participant_org:view' },
     ],
   },
   { key: '/admin/finance/payments', label: 'การชำระเงิน', icon: <DollarOutlined />, perm: 'payment:view' },
