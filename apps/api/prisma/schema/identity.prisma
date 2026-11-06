@@ -77,6 +77,17 @@ model User {
   statementLinesMatched BankStatementLine[]       @relation("StatementLineMatchedBy")
   coordinatorOf         OrganizationCoordinator[] @relation("CoordinatorUser")
   groupsCoordinated     RegistrationGroup[]       @relation("GroupCoordinator")
+  emailVerifications    EmailVerification[]
+  checkinRecords        CheckinRecord[]           @relation("CheckinActor")
+  eventPersonnel        EventPersonnel[]          @relation("EventPersonnelUser")
+  badgeJobs             BadgePrintJob[]           @relation("BadgeJobRequestedBy")
+  certificatesIssued    Certificate[]             @relation("CertificateIssuedBy")
+  certificatesRevoked   Certificate[]             @relation("CertificateRevokedBy")
+  resourceBookings      ResourceBooking[]         @relation("ResourceBookingRequester")
+  resourceDecisions     ResourceBooking[]         @relation("ResourceBookingApprover")
+  notificationPref      NotificationPreference?
+  lineAccount           LineAccount?
+  lineLinkCodes         LineLinkCode[]
 
   @@index([status])
   @@map("users")
@@ -219,4 +230,20 @@ model UserRole {
   @@index([userId])
   @@index([organizationId])
   @@map("user_roles")
+}
+
+/// Self sign-up e-mail verification (P3b). Only the SHA-256 of the token is stored; single use.
+model EmailVerification {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  ip        String?   @db.VarChar(64)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("email_verifications")
 }

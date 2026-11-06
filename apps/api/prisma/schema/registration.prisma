@@ -100,15 +100,21 @@ model Registration {
   /// Group registration (P3): member of this group; payment is on the group's combined order.
   groupId            String?            @map("group_id") @db.Uuid
 
-  event           Event                   @relation(fields: [eventId], references: [id], onDelete: Restrict)
-  user            User?                   @relation("RegistrationUser", fields: [userId], references: [id], onDelete: SetNull)
-  participantType ParticipantType         @relation(fields: [participantTypeId], references: [id], onDelete: Restrict)
-  answers         RegistrationAnswer[]
-  waitingList     WaitingList?
-  paymentOrders   PaymentOrder[]
-  group           RegistrationGroup?      @relation(fields: [groupId], references: [id], onDelete: Restrict)
-  orderLines      PaymentOrderLine[]
-  invitations     GroupMemberInvitation[]
+  event               Event                   @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  user                User?                   @relation("RegistrationUser", fields: [userId], references: [id], onDelete: SetNull)
+  participantType     ParticipantType         @relation(fields: [participantTypeId], references: [id], onDelete: Restrict)
+  answers             RegistrationAnswer[]
+  waitingList         WaitingList?
+  paymentOrders       PaymentOrder[]
+  group               RegistrationGroup?      @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  orderLines          PaymentOrderLine[]
+  invitations         GroupMemberInvitation[]
+  checkinTokens       CheckinToken[]
+  checkinRecords      CheckinRecord[]
+  attendance          AttendanceRecord[]
+  badgePrints         BadgePrint[]
+  certificates        Certificate[]
+  evaluationResponses EvaluationResponse[]
 
   @@index([eventId, status])
   @@index([groupId, status])

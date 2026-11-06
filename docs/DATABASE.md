@@ -73,7 +73,32 @@ Constraint/trigger เพิ่มเติม (เขียนเองใน m
 - CHECK: จำนวนสมาชิก min/max, จำนวนครั้งใช้ลิงก์เชิญ, เลขผู้เสียภาษีองค์กร 13 หลัก
 - ลำดับการล็อก: `registration_groups` → `events` → `payment_orders` → `payments` (ตรงกับ registration → event → order ของรายบุคคล — `lockPayer()` ใน payments.service)
 
+## Migration `email_verification` (P3b)
+ตาราง `email_verifications` (เก็บ SHA-256 ของ token, ใช้ครั้งเดียว, หมดอายุ 24 ชม.) · ประกาศ `@@index` ของ `group_import_rows.registration_id` ใน schema เพื่อไม่ให้ `prisma migrate dev` สร้างคำสั่ง DROP
+
+## Migration `checkin_badges` (P4)
+ตาราง: `checkin_locations`, `checkin_tokens`, `checkin_records`, `attendance_records`, `event_personnel`, `badge_templates`, `badge_template_fields`, `badge_color_rules`, `badge_print_jobs`, `badge_prints` · คอลัมน์ `events.checkin_opens_before_minutes` (0–10080, ค่าเริ่มต้น 120), `events.checkin_late_after_minutes` (null = ไม่นับสาย)
+- `checkin_tokens`: เก็บ SHA-256 ของ token เท่านั้น (token = HMAC จาก id ด้วยคีย์ที่ derive จาก `FIELD_ENCRYPTION_KEY` ผ่าน HKDF) · CHECK registration XOR group · partial unique token ที่ยังใช้ได้ 1 อันต่อการลงทะเบียน/กลุ่ม
+- `checkin_records`: append-only (`forbid_update_delete()`) · `client_key` unique (idempotent สำหรับ offline sync) · การยกเลิกเป็นแถว `UNDO` ที่อ้าง `undoes_id` (unique — ยกเลิกซ้ำไม่ได้; CHECK action=UNDO ⇔ มี undoes_id)
+- `attendance_records`: unique `(registration_id, schedule_id) NULLS NOT DISTINCT` (schedule NULL = ทั้งกิจกรรม; ประกาศ map ชื่อเดียวกันใน schema กัน DROP) — คำนวณใหม่จาก records ทุกครั้ง; `is_manual` = เจ้าหน้าที่กำหนด (สแกนจริงภายหลังทับค่า)
+- `badge_prints`: append-only · CHECK registration XOR personnel · unique (subject, print_no) กันสองจุดพิมพ์ป้าย "ครั้งแรก" ซ้ำพร้อมกัน · `badge_print_jobs.template_snapshot` (JSON) ทำให้เปิดไฟล์ซ้ำได้ป้ายเหมือนเดิมแม้แก้แม่แบบ · CHECK REPRINT ต้องมีเหตุผล
+- `badge_templates`: CHECK ขนาด 20–300 มม. · partial unique แม่แบบหลัก 1 อันต่อกิจกรรม
+- ลำดับการล็อก: เช็กอินล็อกเฉพาะแถว `registrations` (ไม่แตะที่นั่ง จึงไม่ deadlock กับการลงทะเบียน/ชำระเงิน)
+
+## Migration `certificates_evaluation` (P5a)
+ตาราง: `certificate_templates`, `certificates`, `certificate_verifications`, `evaluation_forms`, `evaluation_questions`, `evaluation_options`, `evaluation_responses`, `evaluation_answers`
+- `certificates`: เลขที่ `CERT-<ปีงบ>-nnnnnn` (sequence ไม่ข้าม) + `verify_code` 12 ตัว Crockford base32 (สุ่ม 60 บิต, CHECK รูปแบบ) · CHECK registration XOR personnel · partial unique ฉบับ ISSUED 1 ฉบับต่อ (แม่แบบ, ผู้รับ) · `data` + `template_snapshot` (JSON) ทำให้ PDF/หน้าตรวจสอบแสดงสิ่งที่ออกจริงเสมอ
+- trigger `forbid_certificate_change()`: ห้ามแก้เนื้อหาที่ออกแล้ว ห้ามลบ และฉบับที่ยกเลิกกลับมาใช้ไม่ได้ — แก้ได้เฉพาะ ISSUED→REVOKED (เหตุผล ≥3 ตัวอักษร, CHECK) และตัวนับการดาวน์โหลด
+- การออก/รับเอง ล็อกแถว `certificate_templates` (`FOR UPDATE`) แล้วตรวจซ้ำใน transaction → หลายจุด/กดซ้ำไม่ออกซ้ำ และเลขที่ไม่ข้าม
+- `certificate_verifications`: append-only, IP เก็บเป็น HMAC เท่านั้น
+- `evaluation_responses`: `respondent_key` = HMAC(form id + registration id) unique ต่อแบบประเมิน → ตอบได้ครั้งเดียวแม้ไม่ระบุตัวตน (ไม่เก็บ `registration_id`) · responses/answers append-only · CHECK คำตอบมีค่าเดียว (option / ตัวเลข / ข้อความ), `scale_max` 2–10, เวลาเปิด < ปิด
+
+## Migration `venues_notifications` (P5b)
+ตาราง: `notification_preferences`, `line_accounts`, `line_link_codes`, `notification_dispatches` · คอลัมน์: `venues.organization_id / auto_approve`, `resources.organization_id / description`, `resource_bookings.purpose / requested_by_id / decided_* / updated_at` (`event_id` เป็น nullable — ยืมโดยไม่ผูกกิจกรรมได้), `notifications.dedupe_key`, `notification_logs.user_id / subject / body / dedupe_key / next_attempt_at`
+- trigger `check_resource_stock()`: เมื่อการยืมอุปกรณ์เป็น APPROVED ล็อกแถว `resources` แล้วตรวจยอดสูงสุดของรายการที่อนุมัติซ้อนช่วงเวลา + จำนวนใหม่ ≤ จำนวนคงเหลือ (ข้อความ `RESOURCE_STOCK`) — สองคนอนุมัติพร้อมกันได้ไม่เกินจำนวนจริง
+- CHECK: ไม่อนุมัติต้องมีเหตุผล (ทั้งสถานที่และอุปกรณ์), `resources.quantity >= 1`, `notification_logs.attempts >= 0`
+- `notifications.dedupe_key`, `notification_logs.dedupe_key` unique → ข้อเท็จจริงเดียวกันส่งได้ครั้งเดียวต่อช่องทาง/ผู้รับ แม้ worker หลายตัวทำงานซ้อน
+- index `audit_logs_created_at_idx` (dispatcher สแกนตามเวลา) — ประกาศใน schema ด้วยชื่อเดียวกัน
+
 ## ตารางระยะถัดไป (ออกแบบตาม spec §6)
 - **Payment & Finance (ส่วนที่เหลือ)**: `receipt_stocks` — ข้อมูลออกใบเสร็จ (P2c) เก็บเป็นคอลัมน์ `payment_orders.billing_*` แทนตาราง `billing_infos`
-- **P4**: `checkin_tokens, checkin_records, checkin_locations, attendance_records, badge_templates, badge_template_fields, badge_color_rules, badge_print_jobs, badge_prints, event_personnel`
-- **P5**: `certificate_templates, certificates, certificate_verifications, evaluation_forms, evaluation_questions, evaluation_options, evaluation_responses, evaluation_answers`

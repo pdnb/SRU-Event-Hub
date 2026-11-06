@@ -37,16 +37,18 @@ model Organization {
   updatedById       String?          @map("updated_by_id") @db.Uuid
   deletedAt         DateTime?        @map("deleted_at") @db.Timestamptz(6)
 
-  parent         Organization?      @relation("OrgTree", fields: [parentId], references: [id], onDelete: Restrict)
-  children       Organization[]     @relation("OrgTree")
-  head           User?              @relation("OrgHead", fields: [headUserId], references: [id], onDelete: SetNull)
-  members        UserOrganization[]
-  userRoles      UserRole[]
-  events         Event[]
-  organizerOf    EventOrganizer[]
-  workflows      ApprovalWorkflow[]
-  bankAccounts   BankAccount[]
-  financeBatches FinanceBatch[]
+  parent           Organization?      @relation("OrgTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children         Organization[]     @relation("OrgTree")
+  head             User?              @relation("OrgHead", fields: [headUserId], references: [id], onDelete: SetNull)
+  members          UserOrganization[]
+  userRoles        UserRole[]
+  events           Event[]
+  organizerOf      EventOrganizer[]
+  workflows        ApprovalWorkflow[]
+  bankAccounts     BankAccount[]
+  financeBatches   FinanceBatch[]
+  managedVenues    Venue[]            @relation("VenueManager")
+  managedResources Resource[]         @relation("ResourceManager")
 
   @@index([parentId])
   @@map("organizations")

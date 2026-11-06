@@ -1,7 +1,7 @@
 'use client';
 
 import { Empty, Flex, Spin, theme, Typography } from 'antd';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 
 /**
  * Minimal replacement for antd's deprecated `List` (removed in the next antd major).
@@ -23,7 +23,7 @@ function SimpleList<T>({
   return (
     <Spin spinning={!!loading}>
       {items.length ? (
-        <div role="list">{items.map((item, i) => renderItem(item, i))}</div>
+        <div role="list">{items.map((item, i) => <Fragment key={i}>{renderItem(item, i)}</Fragment>)}</div>
       ) : (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={locale?.emptyText ?? 'ไม่มีข้อมูล'} />
       )}

@@ -100,16 +100,26 @@ async function seedLookups() {
   }
 }
 
-async function seedVenues() {
+async function seedVenues(orgIds: Map<string, string>) {
   const b = await prisma.building.upsert({ where: { code: 'B-CC' }, create: { code: 'B-CC', nameTh: 'อาคารศูนย์ประชุม', campus: 'วิทยาเขตขุนทะเล' }, update: {} });
   const b2 = await prisma.building.upsert({ where: { code: 'B-SCI' }, create: { code: 'B-SCI', nameTh: 'อาคารคณะวิทยาศาสตร์และเทคโนโลยี', campus: 'วิทยาเขตขุนทะเล' }, update: {} });
   const venues = [
     { code: 'CC-HALL', nameTh: 'หอประชุมใหญ่', venueType: 'AUDITORIUM' as const, capacity: 1200, buildingId: b.id },
     { code: 'CC-201', nameTh: 'ห้องประชุม 201', venueType: 'MEETING_ROOM' as const, capacity: 80, buildingId: b.id },
-    { code: 'SCI-LAB1', nameTh: 'ห้องปฏิบัติการคอมพิวเตอร์ 1', venueType: 'LAB' as const, capacity: 40, buildingId: b2.id },
+    { code: 'SCI-LAB1', nameTh: 'ห้องปฏิบัติการคอมพิวเตอร์ 1', venueType: 'LAB' as const, capacity: 40, buildingId: b2.id, organizationId: orgIds.get('SCI') ?? null },
+    { code: 'SCI-301', nameTh: 'ห้องประชุมคณะวิทยาศาสตร์ 301', venueType: 'MEETING_ROOM' as const, capacity: 30, buildingId: b2.id, organizationId: orgIds.get('SCI') ?? null, autoApprove: true },
     { code: 'FIELD', nameTh: 'ลานกิจกรรมกลาง', venueType: 'OUTDOOR' as const, capacity: 2000, buildingId: null },
   ];
-  for (const v of venues) await prisma.venue.upsert({ where: { code: v.code }, create: v, update: {} });
+  // Managing unit is (re)applied so existing databases get it too; central rooms stay null (approved centrally).
+  for (const v of venues) await prisma.venue.upsert({ where: { code: v.code }, create: v, update: { organizationId: (v as { organizationId?: string | null }).organizationId ?? null } });
+  const lab = await prisma.venue.findUniqueOrThrow({ where: { code: 'SCI-LAB1' } });
+  const resources = [
+    { code: 'EQ-PROJ', nameTh: 'เครื่องฉายโปรเจกเตอร์แบบเคลื่อนที่', resourceType: 'โสตทัศนูปกรณ์', quantity: 5, organizationId: null, venueId: null },
+    { code: 'EQ-MIC', nameTh: 'ไมโครโฟนไร้สาย', resourceType: 'เครื่องเสียง', quantity: 10, organizationId: null, venueId: null },
+    { code: 'EQ-TENT', nameTh: 'เต็นท์ 3×3 เมตร', resourceType: 'อุปกรณ์จัดงาน', quantity: 20, organizationId: null, venueId: null },
+    { code: 'SCI-NB', nameTh: 'โน้ตบุ๊กสำหรับอบรม', resourceType: 'คอมพิวเตอร์', quantity: 40, organizationId: orgIds.get('SCI') ?? null, venueId: lab.id },
+  ];
+  for (const x of resources) await prisma.resource.upsert({ where: { code: x.code }, create: x, update: {} });
 }
 
 async function seedSettings() {
@@ -297,7 +307,7 @@ async function main() {
   const orgIds = new Map<string, string>();
   await seedOrgs(ORG_TREE, null, orgIds);
   await seedLookups();
-  await seedVenues();
+  await seedVenues(orgIds);
   await seedSettings();
   await seedWorkflow(orgIds);
   await seedFinance(prisma, orgIds);

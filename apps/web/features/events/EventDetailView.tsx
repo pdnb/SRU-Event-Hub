@@ -5,6 +5,7 @@ import { Breadcrumb, Card, Col, Descriptions, Flex, Row, Tag, Typography } from 
 import Link from 'next/link';
 import type { EventDetailDto } from '@sru/shared-types';
 import { Money, ThaiDate, ThaiDateRange } from '@/components/Format';
+import { GroupRegisterCard } from '@/features/groups/GroupRegisterCard';
 import { RegisterPanel } from '@/features/registration/RegisterPanel';
 import { brand } from '@/styles/theme';
 import { seatsText } from './format';
@@ -89,6 +90,7 @@ export function EventDetailView({ event: e }: { event: EventDetailDto }) {
         </Col>
         <Col xs={24} lg={9}>
           <RegisterPanel event={e} />
+          <GroupRegisterCard event={e} />
           <Card size="small" style={{ marginTop: 16 }} title="แชร์กิจกรรม">
             <ShareButtons title={e.titleTh} path={`/events/${e.code}`} />
           </Card>

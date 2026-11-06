@@ -7,10 +7,11 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
+import { RealtimeAdapter } from './checkin/realtime.adapter';
 import type { Env } from './config/env';
 
 export async function createApp() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true, rawBody: true });
   const config = app.get(ConfigService<Env, true>);
   app.useLogger(app.get(Logger));
 
@@ -39,6 +40,8 @@ export async function createApp() {
       transformOptions: { enableImplicitConversion: false },
     }),
   );
+  // Socket.IO (real-time check-in counters): CORS allow-list + Redis fan-out across replicas.
+  app.useWebSocketAdapter(new RealtimeAdapter(app));
   app.enableShutdownHooks();
 
   if (config.get('NODE_ENV', { infer: true }) !== 'production') {

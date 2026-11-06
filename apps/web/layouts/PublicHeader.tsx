@@ -1,10 +1,11 @@
 'use client';
 
-import { CalendarOutlined, LoginOutlined, MenuOutlined, SearchOutlined, UserOutlined } from '@ant-design/icons';
-import { Button, ConfigProvider, Drawer, Flex, Grid, Menu } from 'antd';
+import { BellOutlined, CalendarOutlined, DashboardOutlined, DownOutlined, FileDoneOutlined, FormOutlined, LoginOutlined, MenuOutlined, SafetyCertificateOutlined, SearchOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
+import { Button, ConfigProvider, Drawer, Dropdown, Flex, Grid, Menu } from 'antd';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { NotificationBell } from '@/features/notifications/NotificationBell';
 import { useMe } from '@/hooks/useMe';
 import { brand } from '@/styles/theme';
 
@@ -16,6 +17,7 @@ const NAV = [
   { key: '/events?tab=past', label: 'กิจกรรมย้อนหลัง' },
   { key: '/calendar', label: 'ปฏิทินกิจกรรม', icon: <CalendarOutlined /> },
   { key: '/registration/status', label: 'ตรวจสอบสถานะ', icon: <SearchOutlined /> },
+  { key: '/verify', label: 'ตรวจสอบเกียรติบัตร', icon: <SafetyCertificateOutlined /> },
 ];
 
 export function PublicHeader() {
@@ -23,15 +25,31 @@ export function PublicHeader() {
   const screens = Grid.useBreakpoint();
   const [open, setOpen] = useState(false);
   const me = useMe();
+  // The signed-in user is known only in the browser; render the bell after hydration so server and client HTML match.
+  const [mounted, setMounted] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => setMounted(true), []);
   const items = NAV.map((n) => ({ key: n.key, icon: n.icon, label: <Link href={n.key}>{n.label}</Link> }));
   const selected = NAV.filter((n) => n.key === path).map((n) => n.key);
 
   const account = me.data ? (
-    <Link href="/admin">
+    <Dropdown
+      menu={{
+        items: [
+          { key: '/my/registrations', icon: <FormOutlined />, label: <Link href="/my/registrations">การลงทะเบียนของฉัน</Link> },
+          { key: '/my/groups', icon: <TeamOutlined />, label: <Link href="/my/groups">ลงทะเบียนแบบกลุ่มของฉัน</Link> },
+          { key: '/my/evaluations', icon: <FileDoneOutlined />, label: <Link href="/my/evaluations">แบบประเมินกิจกรรม</Link> },
+          { key: '/my/notifications', icon: <BellOutlined />, label: <Link href="/my/notifications">การแจ้งเตือน</Link> },
+          { key: '/my/certificates', icon: <SafetyCertificateOutlined />, label: <Link href="/my/certificates">เกียรติบัตรของฉัน</Link> },
+          { type: 'divider' },
+          { key: '/admin', icon: <DashboardOutlined />, label: <Link href="/admin">ระบบจัดการ</Link> },
+        ],
+      }}
+    >
       <Button type="primary" icon={<UserOutlined />}>
-        {me.data.displayName}
+        {me.data.displayName} <DownOutlined />
       </Button>
-    </Link>
+    </Dropdown>
   ) : (
     <Link href="/login">
       <Button type="primary" icon={<LoginOutlined />}>
@@ -62,16 +80,18 @@ export function PublicHeader() {
             <ConfigProvider theme={{ components: { Menu: { itemPaddingInline: 12 } } }}>
               <Menu mode="horizontal" selectedKeys={selected} items={items} style={{ borderBottom: 'none', flex: 1, justifyContent: 'flex-end', minWidth: 0 }} />
             </ConfigProvider>
+            {mounted && me.data && <NotificationBell />}
             {account}
           </Flex>
         ) : (
-          <>
+          <Flex gap={8} align="center">
+            {mounted && me.data && <NotificationBell />}
             <Button aria-label="เมนู" icon={<MenuOutlined />} onClick={() => setOpen(true)} />
             <Drawer open={open} onClose={() => setOpen(false)} title="เมนู" placement="right">
               <Menu mode="inline" selectedKeys={selected} items={items} onClick={() => setOpen(false)} style={{ borderInlineEnd: 'none' }} />
               <div style={{ marginTop: 16 }}>{account}</div>
             </Drawer>
-          </>
+          </Flex>
         )}
       </Flex>
       </div>

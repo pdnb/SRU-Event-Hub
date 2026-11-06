@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckOutlined, EditOutlined, EyeOutlined, RollbackOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
+import { CheckOutlined, EditOutlined, EyeOutlined, IdcardOutlined, QrcodeOutlined, RollbackOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Card, Descriptions, Dropdown, Flex, Form, Input, Modal, Progress, Tabs, Tag, Timeline, Typography } from 'antd';
 import Link from 'next/link';
@@ -12,7 +12,9 @@ import { QueryState } from '@/components/QueryState';
 import { StatusTag } from '@/components/StatusTag';
 import { EDITABLE, POST_APPROVAL_EDITABLE, type AdminEventDto } from '@/features/events/admin-event';
 import { FeeChangeDialog, FeeComparison, type PendingFeeChange } from '@/features/events/FeeChange';
+import { EventGroupsTab } from '@/features/groups/EventGroupsTab';
 import { RegistrationsTable } from '@/features/registration/RegistrationsTable';
+import { EventBookingsTab } from '@/features/venues/EventBookingsTab';
 import { useApiMessage } from '@/hooks/useApiMessage';
 import { useCan, useMe } from '@/hooks/useMe';
 import { api } from '@/services/api';
@@ -130,6 +132,16 @@ export default function AdminEventDetailPage() {
                   {POST_APPROVAL_EDITABLE.includes(e.status) && e.status !== 'APPROVED' && (
                     <Link href={`/events/${e.code}`} target="_blank">
                       <Button icon={<EyeOutlined />}>ดูหน้าสาธารณะ</Button>
+                    </Link>
+                  )}
+                  {['PUBLISHED', 'REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'IN_PROGRESS', 'COMPLETED'].includes(e.status) && can('checkin:view') && (
+                    <Link href={`/admin/checkin/${id}`}>
+                      <Button icon={<QrcodeOutlined />}>เช็กอิน</Button>
+                    </Link>
+                  )}
+                  {!['DRAFT', 'CANCELLED', 'REJECTED'].includes(e.status) && can('badge:view') && (
+                    <Link href={`/admin/badges/${id}`}>
+                      <Button icon={<IdcardOutlined />}>ป้ายชื่อ</Button>
                     </Link>
                   )}
                   {canEdit && (
@@ -252,6 +264,8 @@ export default function AdminEventDetailPage() {
                   ),
                 },
                 ...(can('registration:view') ? [{ key: 'reg', label: `ผู้ลงทะเบียน (${e.seatsTaken})`, children: <Card><RegistrationsTable eventId={id} /></Card> }] : []),
+                ...(can('group:view') ? [{ key: 'groups', label: 'ลงทะเบียนแบบกลุ่ม', children: <EventGroupsTab eventId={id} startAt={e.startAt} capacity={e.capacity} /> }] : []),
+                { key: 'bookings', label: 'สถานที่/อุปกรณ์', children: <EventBookingsTab eventId={id} startAt={e.startAt} endAt={e.endAt} venueId={e.venueId ?? null} editable={can('event:update') && !['CANCELLED', 'COMPLETED'].includes(e.status)} /> },
                 {
                   key: 'approval',
                   label: 'ประวัติการอนุมัติ',

@@ -25,12 +25,13 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
-import { Avatar, Badge, Button, Drawer, Dropdown, Flex, Grid, Layout, Menu, Result, Spin, Tag, Typography } from 'antd';
+import { Avatar, Button, Drawer, Dropdown, Flex, Grid, Layout, Menu, Result, Spin, Tag, Typography } from 'antd';
 import type { MenuProps } from 'antd';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { PermissionCode } from '@sru/shared-types';
+import { NotificationBell } from '@/features/notifications/NotificationBell';
 import { useMe } from '@/hooks/useMe';
 import { api } from '@/services/api';
 import { useUiStore } from '@/stores/ui';
@@ -50,7 +51,7 @@ const MENU: Item[] = [
     icon: <FormOutlined />,
     children: [
       { key: '/admin/registrations', label: 'รายบุคคล', icon: null, perm: 'registration:view' },
-      { key: 'groups', label: 'กลุ่ม / องค์กร', icon: null, phase: 'P3' },
+      { key: '/admin/participant-orgs', label: 'องค์กรผู้ส่งเข้าร่วม', icon: null, perm: 'participant_org:view' },
     ],
   },
   { key: '/admin/finance/payments', label: 'การชำระเงิน', icon: <DollarOutlined />, perm: 'payment:view' },
@@ -66,14 +67,15 @@ const MENU: Item[] = [
       { key: '/admin/finance/refunds', label: 'คืนเงิน', icon: null, perm: 'refund:view' },
     ],
   },
-  { key: 'checkin', label: 'ตรวจสอบการเข้าร่วม', icon: <QrcodeOutlined />, phase: 'P4' },
-  { key: 'badges', label: 'ป้ายชื่อ', icon: <IdcardOutlined />, phase: 'P4' },
-  { key: 'certificates', label: 'เกียรติบัตร', icon: <SafetyCertificateOutlined />, phase: 'P5' },
-  { key: 'evaluations', label: 'แบบประเมิน', icon: <FileDoneOutlined />, phase: 'P5' },
-  { key: 'venues', label: 'สถานที่และทรัพยากร', icon: <HomeOutlined />, phase: 'P5' },
+  { key: '/admin/checkin', label: 'ตรวจสอบการเข้าร่วม', icon: <QrcodeOutlined />, perm: 'checkin:view' },
+  { key: '/admin/badges', label: 'ป้ายชื่อ', icon: <IdcardOutlined />, perm: 'badge:view' },
+  { key: '/admin/certificates', label: 'เกียรติบัตร', icon: <SafetyCertificateOutlined />, perm: 'certificate:view' },
+  { key: '/admin/evaluations', label: 'แบบประเมิน', icon: <FileDoneOutlined />, perm: 'evaluation:view' },
+  { key: '/admin/venues', label: 'สถานที่และทรัพยากร', icon: <HomeOutlined />, perm: 'venue:view' },
   { key: 'reports', label: 'รายงาน', icon: <BarChartOutlined />, phase: 'P5' },
   { key: '/admin/organizations', label: 'จัดการหน่วยงาน', icon: <ClusterOutlined />, perm: 'organization:view' },
   { key: '/admin/users', label: 'จัดการผู้ใช้งาน', icon: <TeamOutlined />, perm: 'user:view' },
+  { key: '/admin/notifications', label: 'การแจ้งเตือน', icon: <BellOutlined />, perm: 'system_setting:view' },
   { key: '/admin/audit-logs', label: 'Audit Log', icon: <AuditOutlined />, perm: 'audit_log:view' },
   { key: '/admin/settings', label: 'ตั้งค่าระบบ', icon: <SettingOutlined />, perm: 'system_setting:view' },
 ];
@@ -175,9 +177,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </Typography.Text>
           </Flex>
           <Flex align="center" gap={16}>
-            <Badge count={0} size="small">
-              <Button type="text" shape="circle" aria-label="การแจ้งเตือน" icon={<BellOutlined />} />
-            </Badge>
+            <NotificationBell />
             <Dropdown
               menu={{
                 items: [

@@ -106,13 +106,17 @@ export function createApiClient(opts: ClientOptions) {
     getPage: <T>(url: string, params?: object) => page<T>(http.get(url, { params })),
     post: <T>(url: string, body?: unknown, config?: AxiosRequestConfig) => data<T>(http.post(url, body, config)),
     patch: <T>(url: string, body?: unknown) => data<T>(http.patch(url, body)),
+    put: <T>(url: string, body?: unknown) => data<T>(http.put(url, body)),
     del: <T>(url: string) => data<T>(http.delete(url)),
 
     auth: {
       login: (username: string, password: string) => data<{ expiresIn: number }>(http.post('/auth/login', { username, password })),
       logout: () => data<{ loggedOut: boolean }>(http.post('/auth/logout')),
       me: () => data<AuthUser>(http.get('/auth/me')),
-      providers: () => data<{ google: boolean }>(http.get('/auth/providers')),
+      providers: () => data<{ google: boolean; selfRegistration?: boolean }>(http.get('/auth/providers')),
+      register: (body: { email: string; password: string; displayName: string; phone?: string }) => data<{ accepted: boolean; message: string }>(http.post('/auth/register', body)),
+      resendVerification: (email: string) => data<{ accepted: boolean; message: string }>(http.post('/auth/resend-verification', { email })),
+      verifyEmail: (token: string) => data<{ verified: boolean; email: string }>(http.post('/auth/verify-email', { token })),
     },
     public: {
       events: (params: object) => page<EventSummaryDto>(http.get('/public/events', { params })),

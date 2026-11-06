@@ -194,7 +194,9 @@ export function RegisterPanel({ event }: { event: EventDetailDto }) {
   );
 }
 
-function DynamicInput({ field, value, onChange, onBlur, id }: { field: RegistrationFieldDto; value: unknown; onChange: (v: unknown) => void; onBlur: () => void; id: string }) {
+/** Input for one organizer-defined question (also used by the group member form). */
+export function DynamicInput({ field, value, onChange, onBlur, id }: { field: Pick<RegistrationFieldDto, 'key' | 'fieldType' | 'options'> & { maxLength?: number | null }; value?: unknown; onChange?: (v: unknown) => void; onBlur?: () => void; id?: string }) {
+  onChange ??= () => {};
   const options = field.options.map((o) => ({ value: o.value, label: o.labelTh }));
   switch (field.fieldType) {
     case 'TEXTAREA':

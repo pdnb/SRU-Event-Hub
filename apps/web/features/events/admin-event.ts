@@ -5,6 +5,7 @@ import type { EventFormValues } from './event-form-schema';
 export type AdminEventDto = EventDetailDto & {
   version: number;
   ownerUserId: string;
+  venueId?: string | null;
   owner: { id: string; displayName: string };
   eventTypeId: string | null;
   categoryId: string | null;

@@ -136,6 +136,7 @@ model RegistrationGroup {
   imports                 GroupImport[]
   changeLogs              GroupChangeLog[]
   consents                GroupConsent[]
+  checkinTokens           CheckinToken[]
 
   @@index([eventId, status])
   @@index([participantOrganizationId])
@@ -201,6 +202,8 @@ model GroupImportRow {
   import GroupImport @relation(fields: [importId], references: [id], onDelete: Cascade)
 
   @@unique([importId, rowNo])
+  /// Created in the group_registration migration; declared so prisma migrate dev keeps it.
+  @@index([registrationId])
   @@map("group_import_rows")
 }
 

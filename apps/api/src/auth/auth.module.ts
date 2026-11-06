@@ -7,6 +7,8 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { GoogleEnabledGuard, GoogleStrategy } from './google.strategy';
 import { JwtStrategy } from './jwt.strategy';
+import { SignupController } from './signup.controller';
+import { SignupService } from './signup.service';
 
 /** Google strategy is only instantiated when credentials are configured. */
 const optionalGoogle: Provider = {
@@ -29,8 +31,9 @@ const optionalGoogle: Provider = {
       }),
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, optionalGoogle, GoogleEnabledGuard],
-  exports: [AuthService],
+  controllers: [AuthController, SignupController],
+  providers: [AuthService, SignupService, JwtStrategy, optionalGoogle, GoogleEnabledGuard],
+  // JwtModule is exported for the Socket.IO gateway (same access-token verification as REST).
+  exports: [AuthService, SignupService, JwtModule],
 })
 export class AuthModule {}

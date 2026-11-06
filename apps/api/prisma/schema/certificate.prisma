@@ -1,0 +1,242 @@
+// ───────────────────────── Certificates & evaluation (P5a, spec §4.10 / §4.11) ─────────────────────────
+
+enum CertificateAudience {
+  /// Registrants (CONFIRMED), subject to the template's eligibility rules.
+  PARTICIPANT
+  /// Event personnel (speakers, staff …) — optionally limited to some roles.
+  PERSONNEL
+}
+
+enum CertificateStatus {
+  ISSUED
+  REVOKED
+}
+
+enum CertificateIssueMethod {
+  /// Issued by a staff member (single / batch).
+  ADMIN
+  /// Claimed by the participant once eligible (template.allow_self_claim).
+  SELF_CLAIM
+}
+
+enum CertificateVerifyResult {
+  VALID
+  REVOKED
+  NOT_FOUND
+}
+
+enum EvaluationFormStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum EvaluationQuestionKind {
+  /// Heading / instructions only (no answer).
+  SECTION
+  /// 1..scale_max (Likert)
+  RATING
+  SINGLE
+  MULTI
+  TEXT
+  TEXTAREA
+}
+
+/// Certificate layout + who gets one. Geometry in millimetres (default A4 landscape).
+/// `fields` = [{ kind: TEXT|QR, content, xMm, yMm, wMm, hMm, fontSize, bold, align, color, sortOrder }].
+model CertificateTemplate {
+  id                String              @id @default(uuid(7)) @db.Uuid
+  eventId           String              @map("event_id") @db.Uuid
+  nameTh            String              @map("name_th") @db.VarChar(200)
+  audience          CertificateAudience @default(PARTICIPANT)
+  /// PERSONNEL audience: roles that receive this certificate (empty = every role).
+  personnelRoles    PersonnelRole[]     @map("personnel_roles")
+  widthMm           Float               @default(297) @map("width_mm")
+  heightMm          Float               @default(210) @map("height_mm")
+  backgroundColor   String?             @map("background_color") @db.VarChar(9)
+  backgroundFileId  String?             @map("background_file_id") @db.Uuid
+  fields            Json
+  // ── eligibility (PARTICIPANT) ──
+  requireAttendance Boolean             @default(true) @map("require_attendance")
+  /// LATE counts as attended.
+  countLate         Boolean             @default(true) @map("count_late")
+  /// Minimum % of sessions attended (null = not used; ignored when the event has no sessions).
+  minSessionPercent Int?                @map("min_session_percent")
+  /// Must have answered every published evaluation form marked required_for_certificate.
+  requireEvaluation Boolean             @default(false) @map("require_evaluation")
+  /// Participants may download it themselves once eligible.
+  allowSelfClaim    Boolean             @default(true) @map("allow_self_claim")
+  isActive          Boolean             @default(true) @map("is_active")
+  version           Int                 @default(1)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById       String?             @map("created_by_id") @db.Uuid
+  updatedById       String?             @map("updated_by_id") @db.Uuid
+
+  event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  background   File?         @relation("CertificateBackground", fields: [backgroundFileId], references: [id], onDelete: SetNull)
+  certificates Certificate[]
+
+  @@index([eventId])
+  @@map("certificate_templates")
+}
+
+/// An issued certificate. Number + verify code are never reused; the content (name, template) is a
+/// snapshot so the PDF and the public verification page always show what was issued. Only the
+/// status / revoke / download columns may change (trigger); rows are never deleted.
+/// CHECK registration XOR personnel; one ISSUED certificate per (template, subject) (partial unique).
+model Certificate {
+  id               String                 @id @default(uuid(7)) @db.Uuid
+  certificateNo    String                 @unique @map("certificate_no") @db.VarChar(30)
+  /// 12 chars Crockford base32 (60 random bits) — printed as QR + text, used on the public verify page.
+  verifyCode       String                 @unique @map("verify_code") @db.Char(12)
+  eventId          String                 @map("event_id") @db.Uuid
+  templateId       String                 @map("template_id") @db.Uuid
+  registrationId   String?                @map("registration_id") @db.Uuid
+  personnelId      String?                @map("personnel_id") @db.Uuid
+  recipientName    String                 @map("recipient_name") @db.VarChar(400)
+  /// Placeholder values at issue time.
+  data             Json
+  templateSnapshot Json                   @map("template_snapshot")
+  status           CertificateStatus      @default(ISSUED)
+  issueMethod      CertificateIssueMethod @map("issue_method")
+  issuedAt         DateTime               @default(now()) @map("issued_at") @db.Timestamptz(6)
+  issuedById       String?                @map("issued_by_id") @db.Uuid
+  revokedAt        DateTime?              @map("revoked_at") @db.Timestamptz(6)
+  revokedById      String?                @map("revoked_by_id") @db.Uuid
+  revokeReason     String?                @map("revoke_reason") @db.VarChar(500)
+  downloadCount    Int                    @default(0) @map("download_count")
+  lastDownloadedAt DateTime?              @map("last_downloaded_at") @db.Timestamptz(6)
+
+  event         Event                     @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  template      CertificateTemplate       @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  registration  Registration?             @relation(fields: [registrationId], references: [id], onDelete: Restrict)
+  personnel     EventPersonnel?           @relation(fields: [personnelId], references: [id], onDelete: Restrict)
+  issuedBy      User?                     @relation("CertificateIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  revokedBy     User?                     @relation("CertificateRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+  verifications CertificateVerification[]
+
+  @@index([eventId, status])
+  @@index([templateId])
+  @@index([registrationId])
+  @@index([personnelId])
+  @@map("certificates")
+}
+
+/// Public verification log (append-only). IP stored only as a salted hash.
+model CertificateVerification {
+  id            String                  @id @default(uuid(7)) @db.Uuid
+  certificateId String?                 @map("certificate_id") @db.Uuid
+  codeTried     String                  @map("code_tried") @db.VarChar(40)
+  result        CertificateVerifyResult
+  ipHash        String?                 @map("ip_hash") @db.Char(64)
+  createdAt     DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  certificate Certificate? @relation(fields: [certificateId], references: [id], onDelete: Restrict)
+
+  @@index([certificateId, createdAt])
+  @@index([createdAt])
+  @@map("certificate_verifications")
+}
+
+/// Evaluation form of an event. Questions are frozen once the first response arrives.
+model EvaluationForm {
+  id                     String               @id @default(uuid(7)) @db.Uuid
+  eventId                String               @map("event_id") @db.Uuid
+  titleTh                String               @map("title_th") @db.VarChar(300)
+  description            String?              @db.VarChar(3000)
+  status                 EvaluationFormStatus @default(DRAFT)
+  /// Responses are stored without registration_id (only a keyed hash to stop double answers).
+  isAnonymous            Boolean              @default(true) @map("is_anonymous")
+  /// Only registrants who attended (PRESENT / LATE) may answer.
+  requireAttendance      Boolean              @default(true) @map("require_attendance")
+  requiredForCertificate Boolean              @default(true) @map("required_for_certificate")
+  /// null = from the event start.
+  opensAt                DateTime?            @map("opens_at") @db.Timestamptz(6)
+  /// null = until closed by hand.
+  closesAt               DateTime?            @map("closes_at") @db.Timestamptz(6)
+  publishedAt            DateTime?            @map("published_at") @db.Timestamptz(6)
+  version                Int                  @default(1)
+  createdAt              DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById            String?              @map("created_by_id") @db.Uuid
+  updatedById            String?              @map("updated_by_id") @db.Uuid
+
+  event     Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  questions EvaluationQuestion[]
+  responses EvaluationResponse[]
+
+  @@index([eventId, status])
+  @@map("evaluation_forms")
+}
+
+model EvaluationQuestion {
+  id         String                 @id @default(uuid(7)) @db.Uuid
+  formId     String                 @map("form_id") @db.Uuid
+  kind       EvaluationQuestionKind
+  labelTh    String                 @map("label_th") @db.VarChar(500)
+  helpText   String?                @map("help_text") @db.VarChar(1000)
+  isRequired Boolean                @default(true) @map("is_required")
+  /// RATING: 2..10 (default 5)
+  scaleMax   Int                    @default(5) @map("scale_max")
+  sortOrder  Int                    @default(0) @map("sort_order")
+
+  form    EvaluationForm     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  options EvaluationOption[]
+  answers EvaluationAnswer[]
+
+  @@index([formId, sortOrder])
+  @@map("evaluation_questions")
+}
+
+model EvaluationOption {
+  id         String @id @default(uuid(7)) @db.Uuid
+  questionId String @map("question_id") @db.Uuid
+  labelTh    String @map("label_th") @db.VarChar(300)
+  sortOrder  Int    @default(0) @map("sort_order")
+
+  question EvaluationQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answers  EvaluationAnswer[]
+
+  @@index([questionId])
+  @@map("evaluation_options")
+}
+
+/// One per (form, registrant): respondent_key = HMAC(form id + registration id) — unique, so a
+/// registrant answers once even on anonymous forms. Append-only (trigger).
+model EvaluationResponse {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  formId         String   @map("form_id") @db.Uuid
+  eventId        String   @map("event_id") @db.Uuid
+  /// null on anonymous forms.
+  registrationId String?  @map("registration_id") @db.Uuid
+  respondentKey  String   @map("respondent_key") @db.Char(64)
+  submittedAt    DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
+
+  form         EvaluationForm     @relation(fields: [formId], references: [id], onDelete: Restrict)
+  event        Event              @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  registration Registration?      @relation(fields: [registrationId], references: [id], onDelete: Restrict)
+  answers      EvaluationAnswer[]
+
+  @@unique([formId, respondentKey])
+  @@index([formId, submittedAt])
+  @@map("evaluation_responses")
+}
+
+/// Append-only (trigger). RATING → value_number, SINGLE/MULTI → option_id (one row per chosen option), TEXT → value_text.
+model EvaluationAnswer {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  responseId  String  @map("response_id") @db.Uuid
+  questionId  String  @map("question_id") @db.Uuid
+  optionId    String? @map("option_id") @db.Uuid
+  valueNumber Int?    @map("value_number")
+  valueText   String? @map("value_text") @db.VarChar(5000)
+
+  response EvaluationResponse @relation(fields: [responseId], references: [id], onDelete: Restrict)
+  question EvaluationQuestion @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  option   EvaluationOption?  @relation(fields: [optionId], references: [id], onDelete: Restrict)
+
+  @@index([responseId])
+  @@index([questionId, optionId])
+  @@map("evaluation_answers")
+}
