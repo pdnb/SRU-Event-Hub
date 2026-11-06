@@ -93,5 +93,12 @@ Constraint/trigger เพิ่มเติม (เขียนเองใน m
 - `certificate_verifications`: append-only, IP เก็บเป็น HMAC เท่านั้น
 - `evaluation_responses`: `respondent_key` = HMAC(form id + registration id) unique ต่อแบบประเมิน → ตอบได้ครั้งเดียวแม้ไม่ระบุตัวตน (ไม่เก็บ `registration_id`) · responses/answers append-only · CHECK คำตอบมีค่าเดียว (option / ตัวเลข / ข้อความ), `scale_max` 2–10, เวลาเปิด < ปิด
 
+## Migration `venues_notifications` (P5b)
+ตาราง: `notification_preferences`, `line_accounts`, `line_link_codes`, `notification_dispatches` · คอลัมน์: `venues.organization_id / auto_approve`, `resources.organization_id / description`, `resource_bookings.purpose / requested_by_id / decided_* / updated_at` (`event_id` เป็น nullable — ยืมโดยไม่ผูกกิจกรรมได้), `notifications.dedupe_key`, `notification_logs.user_id / subject / body / dedupe_key / next_attempt_at`
+- trigger `check_resource_stock()`: เมื่อการยืมอุปกรณ์เป็น APPROVED ล็อกแถว `resources` แล้วตรวจยอดสูงสุดของรายการที่อนุมัติซ้อนช่วงเวลา + จำนวนใหม่ ≤ จำนวนคงเหลือ (ข้อความ `RESOURCE_STOCK`) — สองคนอนุมัติพร้อมกันได้ไม่เกินจำนวนจริง
+- CHECK: ไม่อนุมัติต้องมีเหตุผล (ทั้งสถานที่และอุปกรณ์), `resources.quantity >= 1`, `notification_logs.attempts >= 0`
+- `notifications.dedupe_key`, `notification_logs.dedupe_key` unique → ข้อเท็จจริงเดียวกันส่งได้ครั้งเดียวต่อช่องทาง/ผู้รับ แม้ worker หลายตัวทำงานซ้อน
+- index `audit_logs_created_at_idx` (dispatcher สแกนตามเวลา) — ประกาศใน schema ด้วยชื่อเดียวกัน
+
 ## ตารางระยะถัดไป (ออกแบบตาม spec §6)
 - **Payment & Finance (ส่วนที่เหลือ)**: `receipt_stocks` — ข้อมูลออกใบเสร็จ (P2c) เก็บเป็นคอลัมน์ `payment_orders.billing_*` แทนตาราง `billing_infos`

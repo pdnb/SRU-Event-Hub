@@ -11,7 +11,7 @@ import { RealtimeAdapter } from './checkin/realtime.adapter';
 import type { Env } from './config/env';
 
 export async function createApp() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true, rawBody: true });
   const config = app.get(ConfigService<Env, true>);
   app.useLogger(app.get(Logger));
 

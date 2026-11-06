@@ -10,6 +10,8 @@ import { BadgesModule } from './badges/badges.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { CheckinModule } from './checkin/checkin.module';
 import { EvaluationsModule } from './evaluations/evaluations.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { VenuesModule } from './venues/venues.module';
 import { CsrfGuard, JwtAuthGuard, PermissionsGuard } from './auth/guards';
 import { CategoriesModule } from './categories/categories.module';
 import { CommonModule } from './common/common.module';
@@ -76,6 +78,8 @@ import { UsersModule } from './users/users.module';
     BadgesModule,
     EvaluationsModule,
     CertificatesModule,
+    VenuesModule,
+    NotificationsModule,
     AdminModule,
   ],
   controllers: [HealthController],

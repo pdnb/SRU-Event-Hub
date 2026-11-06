@@ -79,6 +79,11 @@ export class Env {
   /** smtp(s)://user:pass@host:port — unset = e-mails are only logged (development). */
   @IsOptional() @IsString() SMTP_URL?: string;
   @IsOptional() @IsString() MAIL_FROM?: string;
+  /** LINE Messaging API (official account). Unset = LINE notifications off. */
+  @IsOptional() @IsString() LINE_CHANNEL_ACCESS_TOKEN?: string;
+  @IsOptional() @IsString() LINE_CHANNEL_SECRET?: string;
+  /** Official account id shown to users when linking, e.g. @sru-events. */
+  @IsOptional() @IsString() LINE_BOT_ID?: string;
   /** Self sign-up for external users (coordinators). Needs SMTP_URL in production. */
   @Transform(toBool)
   @IsBoolean()

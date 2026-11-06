@@ -60,7 +60,7 @@ export const ROLES: { code: string; nameTh: string; description: string; permiss
     permissions: [...pick(['event', 'registration', 'attendance', 'evaluation', 'organization', 'payment'], ['view']), ...pick(['report'], ['view', 'export']), ...pick(['approval'])],
   },
   { code: ROLE_CODES.CENTRAL_EVENT_ADMIN, nameTh: 'ผู้ดูแลกิจกรรมส่วนกลาง', description: 'จัดการกิจกรรมกลาง', permissions: [...EVENT_MGMT, ...pick(['event_category', 'venue'])] },
-  { code: ROLE_CODES.ORG_ADMIN, nameTh: 'ผู้ดูแลกิจกรรมหน่วยงาน', description: 'จัดการกิจกรรมของหน่วยงาน', permissions: [...EVENT_MGMT, ...pick(['user'], ['view']), ...pick(['organization'], ['update'])] },
+  { code: ROLE_CODES.ORG_ADMIN, nameTh: 'ผู้ดูแลกิจกรรมหน่วยงาน', description: 'จัดการกิจกรรมของหน่วยงาน', permissions: [...EVENT_MGMT, ...pick(['user'], ['view']), ...pick(['organization'], ['update']), ...pick(['venue'])] },
   { code: ROLE_CODES.EVENT_MANAGER, nameTh: 'ผู้จัดกิจกรรม', description: 'สร้างและบริหารกิจกรรม รวมถึงตั้งค่าค่าลงทะเบียน', permissions: EVENT_MGMT },
   { code: ROLE_CODES.APPROVER, nameTh: 'ผู้อนุมัติ', description: 'พิจารณาอนุมัติกิจกรรม', permissions: [...pick(['approval']), ...pick(['event', 'organization'], ['view'])] },
   {

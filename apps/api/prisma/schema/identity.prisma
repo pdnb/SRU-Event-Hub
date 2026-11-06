@@ -83,6 +83,11 @@ model User {
   badgeJobs             BadgePrintJob[]           @relation("BadgeJobRequestedBy")
   certificatesIssued    Certificate[]             @relation("CertificateIssuedBy")
   certificatesRevoked   Certificate[]             @relation("CertificateRevokedBy")
+  resourceBookings      ResourceBooking[]         @relation("ResourceBookingRequester")
+  resourceDecisions     ResourceBooking[]         @relation("ResourceBookingApprover")
+  notificationPref      NotificationPreference?
+  lineAccount           LineAccount?
+  lineLinkCodes         LineLinkCode[]
 
   @@index([status])
   @@map("users")

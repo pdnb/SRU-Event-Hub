@@ -356,7 +356,7 @@ export class CertificatesService {
             action: dto.overrideReason ? 'certificate.issue_override' : 'certificate.issue',
             entityType: 'certificate_template',
             entityId: t.id,
-            after: { eventId, count: out.length, numbers: out.length <= 20 ? out.map((x) => x.certificateNo) : [out[0]!.certificateNo, out.at(-1)!.certificateNo] },
+            after: { eventId, count: out.length, numbers: out.length <= 20 ? out.map((x) => x.certificateNo) : [out[0]!.certificateNo, out.at(-1)!.certificateNo], ids: out.map((x) => x.id) },
             reason: dto.overrideReason ?? null,
             meta,
           },

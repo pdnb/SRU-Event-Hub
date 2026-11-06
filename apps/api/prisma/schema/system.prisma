@@ -57,6 +57,7 @@ model AuditLog {
   @@index([entityType, entityId, createdAt])
   @@index([actorId, createdAt])
   @@index([action, createdAt])
+  @@index([createdAt], map: "audit_logs_created_at_idx")
   @@map("audit_logs")
 }
 
@@ -117,6 +118,8 @@ model Notification {
   title     String    @db.VarChar(300)
   body      String?   @db.VarChar(2000)
   link      String?   @db.VarChar(500)
+  /// The same business fact never produces two in-app notifications (e.g. "audit:<id>:<userId>").
+  dedupeKey String?   @unique @map("dedupe_key") @db.VarChar(200)
   readAt    DateTime? @map("read_at") @db.Timestamptz(6)
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -139,17 +142,71 @@ model NotificationTemplate {
   @@map("notification_templates")
 }
 
+/// One outgoing e-mail / LINE message (the outbox). Rendered when queued; the worker only delivers.
 model NotificationLog {
-  id           String              @id @default(uuid(7)) @db.Uuid
-  channel      NotificationChannel
-  templateCode String              @map("template_code") @db.VarChar(80)
-  recipient    String              @db.VarChar(254)
-  status       DeliveryStatus      @default(QUEUED)
-  error        String?             @db.VarChar(2000)
-  attempts     Int                 @default(0)
-  sentAt       DateTime?           @map("sent_at") @db.Timestamptz(6)
-  createdAt    DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  id            String              @id @default(uuid(7)) @db.Uuid
+  channel       NotificationChannel
+  templateCode  String              @map("template_code") @db.VarChar(80)
+  /// E-mail address or LINE user id.
+  recipient     String              @db.VarChar(254)
+  userId        String?             @map("user_id") @db.Uuid
+  subject       String?             @db.VarChar(300)
+  body          String              @default("")
+  /// Unique: the same fact is delivered once per channel + recipient, however many workers scan it.
+  dedupeKey     String?             @unique @map("dedupe_key") @db.VarChar(200)
+  status        DeliveryStatus      @default(QUEUED)
+  error         String?             @db.VarChar(2000)
+  attempts      Int                 @default(0)
+  nextAttemptAt DateTime            @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  sentAt        DateTime?           @map("sent_at") @db.Timestamptz(6)
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@index([status, createdAt])
+  @@index([status, nextAttemptAt])
+  @@index([userId, createdAt])
   @@map("notification_logs")
+}
+
+/// Per-user channel choices (in-app is always on).
+model NotificationPreference {
+  userId    String   @id @map("user_id") @db.Uuid
+  email     Boolean  @default(true)
+  line      Boolean  @default(true)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+/// A user's LINE account (Messaging API user id), linked by sending a one-time code to the official account.
+model LineAccount {
+  userId     String   @id @map("user_id") @db.Uuid
+  lineUserId String   @unique @map("line_user_id") @db.VarChar(64)
+  linkedAt   DateTime @default(now()) @map("linked_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("line_accounts")
+}
+
+/// One-time LINE link codes (only the SHA-256 is stored; 10 minutes, single use).
+model LineLinkCode {
+  codeHash  String    @id @map("code_hash") @db.Char(64)
+  userId    String    @map("user_id") @db.Uuid
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("line_link_codes")
+}
+
+/// Audit rows already turned into notifications (claimed with INSERT … ON CONFLICT DO NOTHING).
+model NotificationDispatch {
+  auditLogId String   @id @map("audit_log_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("notification_dispatches")
 }

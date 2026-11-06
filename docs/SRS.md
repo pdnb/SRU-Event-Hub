@@ -15,8 +15,8 @@
 | §4.7 Payment & Finance | P2a ✅ / P2b ✅ / P2c ✅ | `apps/api/src/payments` — ดู [PAYMENT.md](PAYMENT.md) (แม่แบบเอกสารเป็นค่าชั่วคราว รอแบบฟอร์มจริง FIN-1) |
 | §4.8 QR/Check-in, §4.8.1 Badges, §4.9 Attendance | P4 | ✅ API `apps/api/src/checkin`, `apps/api/src/badges` · เว็บ `/admin/checkin`, `/admin/badges` (designer `/admin/badges/templates/:id`), QR ผู้เข้าร่วมใน `/my/registrations`, หน้าตรวจสถานะ, หน้ากลุ่ม — สำเนา spec ไม่มีรายละเอียด §4.8+ จึงออกแบบตามขอบเขตใน ROADMAP (ดู OPEN_QUESTIONS CHK-*) |
 | §4.10 Certificates, §4.11 Evaluation | P5a | ✅ API `apps/api/src/certificates`, `apps/api/src/evaluations` · เว็บ `/admin/certificates`, `/admin/evaluations`, `/my/certificates`, `/my/evaluations`, `/verify`, ส่วนท้ายหน้าตรวจสถานะ (guest) — สำเนา spec ไม่มีรายละเอียด §4.10+ จึงออกแบบตามขอบเขตใน ROADMAP (ดู OPEN_QUESTIONS CERT-*, EVAL-1) |
-| §4.12 Notifications | P2b–P5 | ตารางพร้อม, โครง BullMQ พร้อม (ใช้กับหมดเวลาชำระแล้ว) |
-| §4.13 Venues | P1 schema / P5 UI | ✅ ตาราง + exclusion constraint กันจองซ้อน |
+| §4.12 Notifications | P5b | ✅ `apps/api/src/notifications` (in-app, อีเมล, LINE, dispatcher จาก audit log, เตือนก่อนวันงาน) · เว็บ กระดิ่งแจ้งเตือน, `/my/notifications`, `/admin/notifications` |
+| §4.13 Venues | P5b | ✅ `apps/api/src/venues` · เว็บ `/admin/venues`, แท็บ "สถานที่/อุปกรณ์" ในหน้ากิจกรรม — exclusion constraint กันจองห้องซ้อน + trigger กันยืมอุปกรณ์เกินจำนวน |
 | §4.14 Dashboard | P1 พื้นฐาน / P5 ตามบทบาท | |
 | §5 RBAC | P1 | ✅ 15 บทบาท, permission ระดับ action รวม finance actions, data scope, SoD |
 | §6 Database | P1 | ✅ ดู [DATABASE.md](DATABASE.md) |

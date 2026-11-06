@@ -362,6 +362,9 @@ export class EventsService {
         data: { status: 'CANCELLED', closedAt: now, closeReason: 'กิจกรรมถูกยกเลิก' },
       });
       await tx.paymentOrder.updateMany({ where: { eventId: id, status: 'PAID' }, data: { status: 'REFUND_PENDING', closeReason: 'กิจกรรมถูกยกเลิก' } });
+      // Venues and equipment (P5b) are released for others.
+      await tx.venueBooking.updateMany({ where: { eventId: id, status: { in: ['PENDING', 'APPROVED'] } }, data: { status: 'CANCELLED', decisionNote: 'กิจกรรมถูกยกเลิก' } });
+      await tx.resourceBooking.updateMany({ where: { eventId: id, status: { in: ['PENDING', 'APPROVED'] } }, data: { status: 'CANCELLED', decisionNote: 'กิจกรรมถูกยกเลิก' } });
     });
   }
 

@@ -14,6 +14,7 @@ import { EDITABLE, POST_APPROVAL_EDITABLE, type AdminEventDto } from '@/features
 import { FeeChangeDialog, FeeComparison, type PendingFeeChange } from '@/features/events/FeeChange';
 import { EventGroupsTab } from '@/features/groups/EventGroupsTab';
 import { RegistrationsTable } from '@/features/registration/RegistrationsTable';
+import { EventBookingsTab } from '@/features/venues/EventBookingsTab';
 import { useApiMessage } from '@/hooks/useApiMessage';
 import { useCan, useMe } from '@/hooks/useMe';
 import { api } from '@/services/api';
@@ -264,6 +265,7 @@ export default function AdminEventDetailPage() {
                 },
                 ...(can('registration:view') ? [{ key: 'reg', label: `ผู้ลงทะเบียน (${e.seatsTaken})`, children: <Card><RegistrationsTable eventId={id} /></Card> }] : []),
                 ...(can('group:view') ? [{ key: 'groups', label: 'ลงทะเบียนแบบกลุ่ม', children: <EventGroupsTab eventId={id} startAt={e.startAt} capacity={e.capacity} /> }] : []),
+                { key: 'bookings', label: 'สถานที่/อุปกรณ์', children: <EventBookingsTab eventId={id} startAt={e.startAt} endAt={e.endAt} venueId={e.venueId ?? null} editable={can('event:update') && !['CANCELLED', 'COMPLETED'].includes(e.status)} /> },
                 {
                   key: 'approval',
                   label: 'ประวัติการอนุมัติ',

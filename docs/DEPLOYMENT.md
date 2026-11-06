@@ -23,6 +23,9 @@ docker compose --profile app up -d api web nginx
 | `JWT_ACCESS_SECRET` | ≥ 32 ตัวอักษร สุ่ม |
 | `FIELD_ENCRYPTION_KEY` | 32 ไบต์ base64 (P2) — เก็บใน secret manager, ห้ามหาย (ถอดรหัสข้อมูลเดิมไม่ได้) |
 | `GOOGLE_CLIENT_ID/SECRET` | เว้นว่าง = ปิด Google login; callback `https://<domain>/api/v1/auth/google/callback` |
+| `SMTP_URL`, `MAIL_FROM` | relay ของมหาวิทยาลัย — ไม่ตั้ง = อีเมลแจ้งเตือนถูกบันทึกใน log เท่านั้น (สถานะ "ส่งแล้ว" พร้อมหมายเหตุ) |
+| `LINE_CHANNEL_ACCESS_TOKEN`, `LINE_CHANNEL_SECRET`, `LINE_BOT_ID` | LINE Messaging API — ตั้ง webhook ใน LINE Developers เป็น `https://<domain>/api/v1/public/line/webhook` |
+| `QUEUE_ENABLED` | ต้องเป็น `true` ใน production (หมดเวลาชำระ, การแจ้งเตือน) — worker ทำงานใน api ทุก replica ได้อย่างปลอดภัย |
 | `S3_*` | S3-compatible ใดก็ได้; bucket public (รูปกิจกรรม) และ private (สลิป ป้ายชื่อ เกียรติบัตร) |
 
 ## สำรองข้อมูล

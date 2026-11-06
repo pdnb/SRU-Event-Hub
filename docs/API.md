@@ -177,6 +177,29 @@ GET  /me/desk-events?purpose=certificate|evaluation  (ตามขอบเข�
 ```
 error code ใหม่: `NOT_ELIGIBLE` (details: ineligible[{id, fullName, reasons}] หรือ reasons), `ALREADY_ANSWERED`
 
+## Endpoints (P5b — สถานที่ อุปกรณ์ การแจ้งเตือน)
+```text
+# แคตตาล็อก (venue:view; แก้ไขต้องมี venue:create|update ในขอบเขตหน่วยงานผู้ดูแล — ส่วนกลางต้องมีขอบเขต ALL)
+GET  /buildings    POST /buildings    PATCH /buildings/:id
+GET  /venues?search&buildingId&venueType&minCapacity&includeInactive    GET /venues/:id    POST /venues    PATCH /venues/:id
+GET  /venues/availability?from&to&minCapacity&venueType → [{…venue, free, approved[], pending}]   (ช่วงไม่เกิน 31 วัน)
+GET  /resources    POST /resources    PATCH /resources/:id (ลดจำนวนต่ำกว่ายอดที่อนุมัติไม่ได้)    GET /resources/:id/availability?from&to → {quantity, used, available}
+# การจอง (สถานที่ /venue-bookings · อุปกรณ์ /resource-bookings — รูปแบบเดียวกัน)
+GET  /venue-bookings?view=mine|approve&eventId&venueId&status&from&to
+POST /venue-bookings {venueId, startAt, endAt, eventId?, purpose?}     (eventId → ต้องมี event:update ของกิจกรรม; ไม่ผูก → venue:view)
+POST /resource-bookings {resourceId, quantity, startAt, endAt, eventId?, purpose?}
+POST /…/:id/approve {note?}   POST /…/:id/reject {note}   (venue:approve ในขอบเขตผู้ดูแล, ผู้ขอพิจารณาของตนเองไม่ได้)
+POST /…/:id/cancel {note?}    (ผู้ขอ / ผู้จัดกิจกรรม / ผู้อนุมัติ)
+
+# การแจ้งเตือน
+GET  /me/notifications?unread=true    GET /me/notifications/unread-count    POST /me/notifications/:id/read    POST /me/notifications/read-all
+GET|PUT /me/notification-preferences {email?, line?}    POST /me/line/link-code → {code (8 หลัก, 10 นาที), botId}    DELETE /me/line
+POST /public/line/webhook   (ตรวจ X-Line-Signature = base64 HMAC-SHA256(raw body, LINE_CHANNEL_SECRET))
+GET  /notification-logs?status&channel&search (system_setting:view)    POST /notification-logs/:id/retry (system_setting:update)
+GET  /notification-templates    PUT /notification-templates/:code/:channel {subject?, body, isActive?}   (channel = IN_APP|EMAIL|LINE)
+```
+error code ใหม่: `VENUE_CONFLICT` (details.clash), `RESOURCE_UNAVAILABLE` (details: quantity, used, available), `DUPLICATE_CODE`, `LINE_DISABLED`
+
 ## Endpoints (P3b — สมัครสมาชิก)
 ```text
 POST /auth/register {email, password (≥10), displayName, phone?}  → 202 (คำตอบเหมือนกันเสมอ ไม่บอกว่าอีเมลมีบัญชีแล้วหรือไม่)
