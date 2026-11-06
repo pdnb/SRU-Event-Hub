@@ -81,6 +81,8 @@ model User {
   checkinRecords        CheckinRecord[]           @relation("CheckinActor")
   eventPersonnel        EventPersonnel[]          @relation("EventPersonnelUser")
   badgeJobs             BadgePrintJob[]           @relation("BadgeJobRequestedBy")
+  certificatesIssued    Certificate[]             @relation("CertificateIssuedBy")
+  certificatesRevoked   Certificate[]             @relation("CertificateRevokedBy")
 
   @@index([status])
   @@map("users")

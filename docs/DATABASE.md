@@ -85,6 +85,13 @@ Constraint/trigger เพิ่มเติม (เขียนเองใน m
 - `badge_templates`: CHECK ขนาด 20–300 มม. · partial unique แม่แบบหลัก 1 อันต่อกิจกรรม
 - ลำดับการล็อก: เช็กอินล็อกเฉพาะแถว `registrations` (ไม่แตะที่นั่ง จึงไม่ deadlock กับการลงทะเบียน/ชำระเงิน)
 
+## Migration `certificates_evaluation` (P5a)
+ตาราง: `certificate_templates`, `certificates`, `certificate_verifications`, `evaluation_forms`, `evaluation_questions`, `evaluation_options`, `evaluation_responses`, `evaluation_answers`
+- `certificates`: เลขที่ `CERT-<ปีงบ>-nnnnnn` (sequence ไม่ข้าม) + `verify_code` 12 ตัว Crockford base32 (สุ่ม 60 บิต, CHECK รูปแบบ) · CHECK registration XOR personnel · partial unique ฉบับ ISSUED 1 ฉบับต่อ (แม่แบบ, ผู้รับ) · `data` + `template_snapshot` (JSON) ทำให้ PDF/หน้าตรวจสอบแสดงสิ่งที่ออกจริงเสมอ
+- trigger `forbid_certificate_change()`: ห้ามแก้เนื้อหาที่ออกแล้ว ห้ามลบ และฉบับที่ยกเลิกกลับมาใช้ไม่ได้ — แก้ได้เฉพาะ ISSUED→REVOKED (เหตุผล ≥3 ตัวอักษร, CHECK) และตัวนับการดาวน์โหลด
+- การออก/รับเอง ล็อกแถว `certificate_templates` (`FOR UPDATE`) แล้วตรวจซ้ำใน transaction → หลายจุด/กดซ้ำไม่ออกซ้ำ และเลขที่ไม่ข้าม
+- `certificate_verifications`: append-only, IP เก็บเป็น HMAC เท่านั้น
+- `evaluation_responses`: `respondent_key` = HMAC(form id + registration id) unique ต่อแบบประเมิน → ตอบได้ครั้งเดียวแม้ไม่ระบุตัวตน (ไม่เก็บ `registration_id`) · responses/answers append-only · CHECK คำตอบมีค่าเดียว (option / ตัวเลข / ข้อความ), `scale_max` 2–10, เวลาเปิด < ปิด
+
 ## ตารางระยะถัดไป (ออกแบบตาม spec §6)
 - **Payment & Finance (ส่วนที่เหลือ)**: `receipt_stocks` — ข้อมูลออกใบเสร็จ (P2c) เก็บเป็นคอลัมน์ `payment_orders.billing_*` แทนตาราง `billing_infos`
-- **P5**: `certificate_templates, certificates, certificate_verifications, evaluation_forms, evaluation_questions, evaluation_options, evaluation_responses, evaluation_answers`

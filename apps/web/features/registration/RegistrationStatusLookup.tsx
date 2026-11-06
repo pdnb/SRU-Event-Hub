@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { ApiError } from '@sru/api-client';
 import { ThaiDateRange, ThaiDate } from '@/components/Format';
 import { StatusTag } from '@/components/StatusTag';
+import { GuestAfterEvent } from '@/features/certificates/GuestAfterEvent';
 import { CheckinQrButton } from '@/features/checkin/CheckinQr';
 import { PaymentPanel } from '@/features/payment/PaymentPanel';
 import { api } from '@/services/api';
@@ -118,6 +119,7 @@ export function RegistrationStatusLookup() {
               </Button>
             </Popconfirm>
           )}
+          {r.status === 'CONFIRMED' && creds && new Date(r.event.startAt) <= new Date() && <GuestAfterEvent creds={creds} />}
         </Card>
       )}
     </>

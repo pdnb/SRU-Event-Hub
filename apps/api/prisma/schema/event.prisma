@@ -148,41 +148,45 @@ model Event {
   updatedById               String?        @map("updated_by_id") @db.Uuid
   deletedAt                 DateTime?      @map("deleted_at") @db.Timestamptz(6)
 
-  eventType          EventType?             @relation(fields: [eventTypeId], references: [id], onDelete: Restrict)
-  category           EventCategory?         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  organization       Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  owner              User                   @relation("EventOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
-  createdBy          User                   @relation("EventCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  venue              Venue?                 @relation(fields: [venueId], references: [id], onDelete: SetNull)
-  bankAccount        BankAccount?           @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
-  incomeCode         IncomeCode?            @relation(fields: [incomeCodeId], references: [id], onDelete: Restrict)
-  feeRates           EventFeeRate[]
-  paymentOrders      PaymentOrder[]
-  financeBatches     FinanceBatch[]
-  cashierSessions    CashierSession[]
-  coverImage         File?                  @relation("EventCover", fields: [coverImageFileId], references: [id], onDelete: SetNull)
-  tags               EventTag[]
-  images             EventImage[]
-  files              EventFile[]
-  schedules          EventSchedule[]
-  organizers         EventOrganizer[]
-  participantTypes   EventParticipantType[]
-  statusHistory      EventStatusHistory[]
-  approvalRequests   ApprovalRequest[]
-  registrationFields RegistrationField[]
-  registrations      Registration[]
-  waitingList        WaitingList[]
-  groupSetting       EventGroupSetting?
-  registrationGroups RegistrationGroup[]
-  venueBookings      VenueBooking[]
-  resourceBookings   ResourceBooking[]
-  checkinLocations   CheckinLocation[]
-  checkinTokens      CheckinToken[]
-  checkinRecords     CheckinRecord[]
-  attendanceRecords  AttendanceRecord[]
-  personnel          EventPersonnel[]
-  badgeTemplates     BadgeTemplate[]
-  badgePrintJobs     BadgePrintJob[]
+  eventType            EventType?             @relation(fields: [eventTypeId], references: [id], onDelete: Restrict)
+  category             EventCategory?         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  organization         Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  owner                User                   @relation("EventOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  createdBy            User                   @relation("EventCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  venue                Venue?                 @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  bankAccount          BankAccount?           @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  incomeCode           IncomeCode?            @relation(fields: [incomeCodeId], references: [id], onDelete: Restrict)
+  feeRates             EventFeeRate[]
+  paymentOrders        PaymentOrder[]
+  financeBatches       FinanceBatch[]
+  cashierSessions      CashierSession[]
+  coverImage           File?                  @relation("EventCover", fields: [coverImageFileId], references: [id], onDelete: SetNull)
+  tags                 EventTag[]
+  images               EventImage[]
+  files                EventFile[]
+  schedules            EventSchedule[]
+  organizers           EventOrganizer[]
+  participantTypes     EventParticipantType[]
+  statusHistory        EventStatusHistory[]
+  approvalRequests     ApprovalRequest[]
+  registrationFields   RegistrationField[]
+  registrations        Registration[]
+  waitingList          WaitingList[]
+  groupSetting         EventGroupSetting?
+  registrationGroups   RegistrationGroup[]
+  venueBookings        VenueBooking[]
+  resourceBookings     ResourceBooking[]
+  checkinLocations     CheckinLocation[]
+  checkinTokens        CheckinToken[]
+  checkinRecords       CheckinRecord[]
+  attendanceRecords    AttendanceRecord[]
+  personnel            EventPersonnel[]
+  badgeTemplates       BadgeTemplate[]
+  badgePrintJobs       BadgePrintJob[]
+  certificateTemplates CertificateTemplate[]
+  certificates         Certificate[]
+  evaluationForms      EvaluationForm[]
+  evaluationResponses  EvaluationResponse[]
 
   @@index([organizationId, status])
   @@index([status, startAt])

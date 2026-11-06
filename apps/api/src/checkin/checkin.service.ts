@@ -90,6 +90,9 @@ export const summarize = (r: RegRow): RegistrantSummary => ({
  * append-only; mistakes are reversed with an UNDO record. Attendance rows are derived from the
  * records (whole event = schedule NULL, plus one row per session) unless set by hand.
  */
+export type DeskPurpose = 'checkin' | 'badge' | 'certificate' | 'evaluation';
+const DESK_PURPOSE_PERMISSION = { checkin: 'checkin:view', badge: 'badge:view', certificate: 'certificate:view', evaluation: 'evaluation:view' } as const;
+
 @Injectable()
 export class CheckinService {
   private readonly key: Buffer;
@@ -111,9 +114,15 @@ export class CheckinService {
    * Events the user can run a check-in desk / badge printing for: within the data scope of the
    * permission, or assigned as event personnel with can_checkin. Recent and upcoming only.
    */
-  async myEvents(user: AuthUser, purpose: 'checkin' | 'badge') {
-    const code = purpose === 'checkin' ? 'checkin:view' : 'badge:view';
-    const scopes: Prisma.EventWhereInput[] = [{ personnel: { some: { userId: user.id, canCheckin: true, deletedAt: null } } }];
+  /**
+   * Events the user works on for a purpose. Desk staff assigned as personnel see check-in / badge
+   * events only; certificates and evaluations follow the permission scope and look back a year
+   * (certificates are often issued long after the event).
+   */
+  async myEvents(user: AuthUser, purpose: DeskPurpose) {
+    const code = DESK_PURPOSE_PERMISSION[purpose];
+    const desk = purpose === 'checkin' || purpose === 'badge';
+    const scopes: Prisma.EventWhereInput[] = desk ? [{ personnel: { some: { userId: user.id, canCheckin: true, deletedAt: null } } }] : [];
     if (this.orgAccess.has(user, code)) {
       if (this.orgAccess.ownOnly(user, code)) scopes.push({ OR: [{ ownerUserId: user.id }, { createdById: user.id }] });
       else {
@@ -121,11 +130,12 @@ export class CheckinService {
         scopes.push(scope === 'ALL' ? {} : { organizationId: { in: scope } });
       }
     }
+    if (!scopes.length) return [];
     const rows = await this.prisma.event.findMany({
       where: {
         deletedAt: null,
         status: { in: [...CHECKIN_EVENT_STATUSES, 'COMPLETED'] as never[] },
-        endAt: { gte: new Date(Date.now() - 30 * 86400_000) },
+        endAt: { gte: new Date(Date.now() - (desk ? 30 : 365) * 86400_000) },
         OR: scopes,
       },
       select: {

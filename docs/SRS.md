@@ -14,7 +14,7 @@
 | §4.6 Registration | P1 | ✅ รายบุคคล, guest, ป้องกันซ้ำ, จำกัดที่นั่ง atomic, waitlist, idempotency, export — §4.6.1 กลุ่ม ✅ P3a `apps/api/src/groups` + หน้าเว็บ P3b `apps/web/features/groups` |
 | §4.7 Payment & Finance | P2a ✅ / P2b ✅ / P2c ✅ | `apps/api/src/payments` — ดู [PAYMENT.md](PAYMENT.md) (แม่แบบเอกสารเป็นค่าชั่วคราว รอแบบฟอร์มจริง FIN-1) |
 | §4.8 QR/Check-in, §4.8.1 Badges, §4.9 Attendance | P4 | ✅ API `apps/api/src/checkin`, `apps/api/src/badges` · เว็บ `/admin/checkin`, `/admin/badges` (designer `/admin/badges/templates/:id`), QR ผู้เข้าร่วมใน `/my/registrations`, หน้าตรวจสถานะ, หน้ากลุ่ม — สำเนา spec ไม่มีรายละเอียด §4.8+ จึงออกแบบตามขอบเขตใน ROADMAP (ดู OPEN_QUESTIONS CHK-*) |
-| §4.10 Certificates, §4.11 Evaluation | P5 | |
+| §4.10 Certificates, §4.11 Evaluation | P5a | ✅ API `apps/api/src/certificates`, `apps/api/src/evaluations` · เว็บ `/admin/certificates`, `/admin/evaluations`, `/my/certificates`, `/my/evaluations`, `/verify`, ส่วนท้ายหน้าตรวจสถานะ (guest) — สำเนา spec ไม่มีรายละเอียด §4.10+ จึงออกแบบตามขอบเขตใน ROADMAP (ดู OPEN_QUESTIONS CERT-*, EVAL-1) |
 | §4.12 Notifications | P2b–P5 | ตารางพร้อม, โครง BullMQ พร้อม (ใช้กับหมดเวลาชำระแล้ว) |
 | §4.13 Venues | P1 schema / P5 UI | ✅ ตาราง + exclusion constraint กันจองซ้อน |
 | §4.14 Dashboard | P1 พื้นฐาน / P5 ตามบทบาท | |

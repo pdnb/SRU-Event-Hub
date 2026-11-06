@@ -40,7 +40,8 @@ export class CheckinController {
   @ApiOperation({ summary: 'กิจกรรมที่ผู้ใช้เปิดจุดเช็กอิน / พิมพ์ป้ายชื่อได้ (ตามขอบเขตสิทธิ์ หรือได้รับมอบหมายเป็นบุคลากรของงาน)' })
   @Get('me/desk-events')
   deskEvents(@Query('purpose') purpose: string | undefined, @CurrentUser() u: AuthUser) {
-    return this.checkin.myEvents(u, purpose === 'badge' ? 'badge' : 'checkin');
+    const p = (['badge', 'certificate', 'evaluation'] as const).find((x) => x === purpose) ?? 'checkin';
+    return this.checkin.myEvents(u, p);
   }
 
   // ── settings / locations ──

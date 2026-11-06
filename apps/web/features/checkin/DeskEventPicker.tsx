@@ -11,7 +11,7 @@ import { api } from '@/services/api';
 import type { DeskEvent } from './types';
 
 /** Events the user can run a check-in desk / badge printing for (scope + personnel assignment). */
-export function DeskEventPicker({ purpose, hrefFor, actionLabel }: { purpose: 'checkin' | 'badge'; hrefFor: (id: string) => string; actionLabel: string }) {
+export function DeskEventPicker({ purpose, hrefFor, actionLabel }: { purpose: 'checkin' | 'badge' | 'certificate' | 'evaluation'; hrefFor: (id: string) => string; actionLabel: string }) {
   const [when, setWhen] = useState<'now' | 'all'>('now');
   const [now] = useState(() => Date.now());
   const list = useQuery({ queryKey: ['desk-events', purpose], queryFn: () => api.get<DeskEvent[]>('/me/desk-events', { purpose }) });

@@ -142,7 +142,7 @@ function drawBadge(doc: PDFKit.PDFDocument, t: BadgeTemplateSpec, fields: BadgeF
  * font down to 75 % for it; otherwise wraps by Thai word, shrinking until the lines fit. The last
  * resort is an ellipsis.
  */
-function drawFittedText(doc: PDFKit.PDFDocument, text: string, x: number, y: number, w: number, h: number, f: BadgeFieldSpec, color: string) {
+export function drawFittedText(doc: PDFKit.PDFDocument, text: string, x: number, y: number, w: number, h: number, f: Pick<BadgeFieldSpec, 'fontSize' | 'bold' | 'align'>, color: string) {
   const font = f.bold ? 'th-bold' : 'th';
   const pad = Math.min(1.2, w * 0.02);
   const width = Math.max(1, w - pad * 2);
@@ -174,7 +174,7 @@ function drawFittedText(doc: PDFKit.PDFDocument, text: string, x: number, y: num
 }
 
 /** Vector QR: one rectangle per horizontal run of dark modules, centred in the box with a 2-module quiet zone. */
-function drawQr(doc: PDFKit.PDFDocument, text: string, x: number, y: number, w: number, h: number) {
+export function drawQr(doc: PDFKit.PDFDocument, text: string, x: number, y: number, w: number, h: number) {
   const qr = QRCode.create(text, { errorCorrectionLevel: 'M' });
   const n = qr.modules.size;
   const quiet = 2;

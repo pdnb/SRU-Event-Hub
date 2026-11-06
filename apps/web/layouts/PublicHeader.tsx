@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarOutlined, DashboardOutlined, DownOutlined, FormOutlined, LoginOutlined, MenuOutlined, SearchOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
+import { CalendarOutlined, DashboardOutlined, DownOutlined, FileDoneOutlined, FormOutlined, LoginOutlined, MenuOutlined, SafetyCertificateOutlined, SearchOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
 import { Button, ConfigProvider, Drawer, Dropdown, Flex, Grid, Menu } from 'antd';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -16,6 +16,7 @@ const NAV = [
   { key: '/events?tab=past', label: 'กิจกรรมย้อนหลัง' },
   { key: '/calendar', label: 'ปฏิทินกิจกรรม', icon: <CalendarOutlined /> },
   { key: '/registration/status', label: 'ตรวจสอบสถานะ', icon: <SearchOutlined /> },
+  { key: '/verify', label: 'ตรวจสอบเกียรติบัตร', icon: <SafetyCertificateOutlined /> },
 ];
 
 export function PublicHeader() {
@@ -32,6 +33,8 @@ export function PublicHeader() {
         items: [
           { key: '/my/registrations', icon: <FormOutlined />, label: <Link href="/my/registrations">การลงทะเบียนของฉัน</Link> },
           { key: '/my/groups', icon: <TeamOutlined />, label: <Link href="/my/groups">ลงทะเบียนแบบกลุ่มของฉัน</Link> },
+          { key: '/my/evaluations', icon: <FileDoneOutlined />, label: <Link href="/my/evaluations">แบบประเมินกิจกรรม</Link> },
+          { key: '/my/certificates', icon: <SafetyCertificateOutlined />, label: <Link href="/my/certificates">เกียรติบัตรของฉัน</Link> },
           { type: 'divider' },
           { key: '/admin', icon: <DashboardOutlined />, label: <Link href="/admin">ระบบจัดการ</Link> },
         ],

@@ -7,7 +7,9 @@ import { LoggerModule } from 'nestjs-pino';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { BadgesModule } from './badges/badges.module';
+import { CertificatesModule } from './certificates/certificates.module';
 import { CheckinModule } from './checkin/checkin.module';
+import { EvaluationsModule } from './evaluations/evaluations.module';
 import { CsrfGuard, JwtAuthGuard, PermissionsGuard } from './auth/guards';
 import { CategoriesModule } from './categories/categories.module';
 import { CommonModule } from './common/common.module';
@@ -72,6 +74,8 @@ import { UsersModule } from './users/users.module';
     GroupsModule,
     CheckinModule,
     BadgesModule,
+    EvaluationsModule,
+    CertificatesModule,
     AdminModule,
   ],
   controllers: [HealthController],

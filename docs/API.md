@@ -150,6 +150,33 @@ error code ใหม่: `INVALID_QR`, `QR_NOT_FOUND`, `QR_REVOKED`, `WRONG_EVEN
 
 Real-time: Socket.IO namespace `/checkin` (path `/socket.io`) — ยืนยันตัวตนด้วย cookie `sru_at` (หรือ `auth.token`), `emit('subscribe', {eventId})` → `{ok}` (ตรวจ `checkin:view` ทุกครั้ง), รับ `checkin` {eventId, kind, count, at} — ไม่มีข้อมูลส่วนบุคคล ให้ client ดึง /stats ใหม่
 
+## Endpoints (P5a — แบบประเมิน เกียรติบัตร)
+```text
+# แบบประเมิน (ผู้จัด)
+GET  /events/:id/evaluation-forms (evaluation:view)    POST /events/:id/evaluation-forms {titleTh, questions?, isAnonymous?, requireAttendance?, requiredForCertificate?, opensAt?, closesAt?}
+GET/PUT/DELETE /evaluation-forms/:id   (PUT ต้องส่ง version; มีผู้ตอบแล้ว → แก้คำถาม/การไม่ระบุตัวตนไม่ได้ และลบไม่ได้)
+POST /evaluation-forms/:id/status {status: PUBLISHED|CLOSED}
+GET  /evaluation-forms/:id/summary      GET /evaluation-forms/:id/export (evaluation:export, .xlsx)
+# แบบประเมิน (ผู้ตอบ)
+GET  /me/evaluations     GET /evaluation-forms/:id/respond?registrationId=     POST /evaluation-forms/:id/responses {registrationId, answers:[{questionId, value?|optionIds?|text?}]}
+POST /public/registrations/evaluations {referenceNo, token}   POST /public/evaluation-forms/:id/view {…}   POST /public/evaluation-forms/:id/responses {…, answers}
+
+# เกียรติบัตร (ผู้จัด)
+GET  /certificates/placeholders    GET/POST /events/:id/certificate-templates    POST /events/:id/certificate-templates/preview {template, templateId?} → PDF
+GET/PUT/DELETE /certificate-templates/:id (PUT ต้องส่ง version)    POST|GET /certificate-templates/:id/background (PNG/JPG ≤8MB)
+GET  /events/:id/certificates/candidates?templateId&filter=eligible|ineligible|issued|not_issued&search   (meta.summary)
+POST /events/:id/certificates/issue {templateId, ids? | allEligible?, overrideReason?}   (overrideReason ต้องมี certificate:update)
+GET  /events/:id/certificates?templateId&status&search    GET /events/:id/certificates/export (.xlsx)    POST /events/:id/certificates/pdf {templateId?, ids?} (≤500)
+POST /certificates/:id/revoke {reason}  (certificate:void)    GET /certificates/:id/pdf  (ผู้รับ หรือ certificate:view; ฉบับยกเลิกมีลายน้ำ)
+# เกียรติบัตร (ผู้รับ)
+GET  /me/certificates → {issued, claimable[{eligible, reasons}]}    POST /me/certificates/claim {templateId, registrationId}
+POST /public/registrations/certificates {referenceNo, token}   …/certificates/claim {…, templateId}   …/certificates/pdf {…, certificateId}
+# ตรวจสอบสาธารณะ (จำกัด 30/นาที)
+GET  /public/certificates/verify/:code → {result: VALID|REVOKED|NOT_FOUND, certificateNo, recipientName, title, issuedAt, revokedAt, event}
+GET  /me/desk-events?purpose=certificate|evaluation  (ตามขอบเขตสิทธิ์ ย้อนหลัง 1 ปี)
+```
+error code ใหม่: `NOT_ELIGIBLE` (details: ineligible[{id, fullName, reasons}] หรือ reasons), `ALREADY_ANSWERED`
+
 ## Endpoints (P3b — สมัครสมาชิก)
 ```text
 POST /auth/register {email, password (≥10), displayName, phone?}  → 202 (คำตอบเหมือนกันเสมอ ไม่บอกว่าอีเมลมีบัญชีแล้วหรือไม่)

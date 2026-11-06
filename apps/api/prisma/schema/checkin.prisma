@@ -163,9 +163,10 @@ model EventPersonnel {
   createdById String?       @map("created_by_id") @db.Uuid
   deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz(6)
 
-  event  Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  user   User?        @relation("EventPersonnelUser", fields: [userId], references: [id], onDelete: SetNull)
-  prints BadgePrint[]
+  event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user         User?         @relation("EventPersonnelUser", fields: [userId], references: [id], onDelete: SetNull)
+  prints       BadgePrint[]
+  certificates Certificate[]
 
   @@index([eventId])
   @@index([userId])
