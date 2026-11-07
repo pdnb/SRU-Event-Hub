@@ -126,7 +126,7 @@ async function seedSettings() {
   const settings: [string, unknown, string][] = [
     ['site.name', { th: 'ระบบบริหารจัดการกิจกรรม มหาวิทยาลัยราชภัฏสุราษฎร์ธานี', en: 'SRU Event Hub' }, 'ชื่อระบบ'],
     ['pdpa.consentVersion', '2569-1', 'เวอร์ชันข้อความยินยอม PDPA ปัจจุบัน'],
-    ['finance.submissionLeadDays', 7, 'จำนวนวันก่อนวันจัดกิจกรรมที่ต้องส่งรายงานนำส่งกองคลัง (รอยืนยันกับกองคลัง)'],
+    ['finance.submissionLeadDays', 7, 'จำนวนวันก่อนวันจัดกิจกรรมที่ต้องส่งรายงานนำส่งกองคลัง (FIN-3: กองคลังยืนยัน 7 วัน)'],
     ['payment.defaultDueHours', 48, 'ระยะเวลาชำระเงินหลังลงทะเบียน (ชั่วโมง)'],
     // P2c — placeholders until กองคลัง confirms the official forms (FIN-1) and bank formats.
     ['finance.remittanceReportTemplate', DEFAULT_BATCH_TEMPLATE, 'แม่แบบรายงานนำส่งเงิน (PDF/Excel) — แบบชั่วคราว รอแบบฟอร์มจริงจากกองคลัง (FIN-1)'],
