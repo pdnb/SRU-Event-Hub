@@ -29,6 +29,9 @@ interface Item {
   transferredAt: string | null;
   verifiedAt: string | null;
   verifiedByName: string | null;
+  /** FIN-10: group payment → one receipt in the organization's name + attendee list. */
+  groupNo: string | null;
+  memberCount: number | null;
   /** receiptNo is already formatted "<ปีงบ>/<เลขที่>" e.g. 2569/0001 (FIN-2). */
   receipt: { id: string; receiptNo: string; issuedAt: string } | null;
 }
@@ -199,7 +202,23 @@ export default function FinanceBatchDetailPage({ params }: { params: Promise<{ i
           columns={[
             { title: 'ลำดับ', width: 60, render: (_, __, i) => i + 1 },
             { title: 'เลขที่รายการ', dataIndex: 'paymentNo', width: 150 },
-            { title: 'ผู้ชำระ', render: (_, r) => <>{r.payerName}<div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{r.referenceNo}</Typography.Text></div></> },
+            {
+              title: 'ผู้ชำระ',
+              render: (_, r) => (
+                <>
+                  {r.payerName}
+                  <div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{r.groupNo ? `กลุ่ม ${r.groupNo} · ${r.memberCount ?? 0} คน` : r.referenceNo}</Typography.Text></div>
+                  {r.groupNo && can('finance_batch:export') && (
+                    <Space size={0}>
+                      <Button size="small" type="link" icon={<FilePdfOutlined />} style={{ paddingInline: 0 }} onClick={() => downloadFile(`/finance/batches/${id}/items/${r.paymentId}/attendees`, `${r.groupNo}-attendees.pdf`, { format: 'pdf' }).catch(msg.error)}>
+                        รายชื่อแนบใบเสร็จ
+                      </Button>
+                      <Button size="small" type="link" aria-label="รายชื่อแนบใบเสร็จ (Excel)" icon={<DownloadOutlined />} onClick={() => downloadFile(`/finance/batches/${id}/items/${r.paymentId}/attendees`, `${r.groupNo}-attendees.xlsx`, { format: 'xlsx' }).catch(msg.error)} />
+                    </Space>
+                  )}
+                </>
+              ),
+            },
             { title: 'ตรวจสอบโดย', render: (_, r) => <>{r.verifiedByName}<div><Typography.Text type="secondary" style={{ fontSize: 12 }}><ThaiDate value={r.verifiedAt} time /></Typography.Text></div></> },
             { title: 'จำนวนเงิน', dataIndex: 'amount', align: 'right', width: 130, render: (v: string) => <Money value={v} /> },
             {

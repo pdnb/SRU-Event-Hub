@@ -7,7 +7,7 @@
  */
 import { seedFinance, seedFinanceDemo } from './finance';
 import { seedGroupsDemo } from './groups';
-import { DEFAULT_BATCH_TEMPLATE, DEFAULT_CASH_TEMPLATE } from '../../src/payments/documents/templates';
+import { DEFAULT_ATTENDEE_TEMPLATE, DEFAULT_BATCH_TEMPLATE, DEFAULT_CASH_TEMPLATE } from '../../src/payments/documents/templates';
 import { DEFAULT_STATEMENT_COLUMNS } from '../../src/payments/reconciliation/statement-parser';
 import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -133,6 +133,7 @@ async function seedSettings() {
     // P2c — placeholders until กองคลัง confirms the official forms (FIN-1) and bank formats.
     ['finance.remittanceReportTemplate', DEFAULT_BATCH_TEMPLATE, 'แม่แบบรายงานนำส่งเงิน (PDF/Excel) — แบบชั่วคราว รอแบบฟอร์มจริงจากกองคลัง (FIN-1)'],
     ['finance.cashRemittanceTemplate', DEFAULT_CASH_TEMPLATE, 'แม่แบบใบนำส่งเงินสดของกะรับเงินหน้างาน — แบบชั่วคราว (FIN-1)'],
+    ['finance.groupReceiptAttachmentTemplate', DEFAULT_ATTENDEE_TEMPLATE, 'แม่แบบรายชื่อผู้เข้าร่วมแนบใบเสร็จฉบับเดียวของกลุ่ม (FIN-10)'],
     ['finance.statementColumns', DEFAULT_STATEMENT_COLUMNS, 'ชื่อหัวคอลัมน์ของไฟล์ statement ธนาคาร (CSV/XLSX) ที่ใช้กระทบยอด'],
     ['finance.reconcileToleranceMinutes', 15, 'ช่วงเวลา (นาที) ที่ยอมให้เวลาโอนต่างจากเวลาใน statement เมื่อจับคู่อัตโนมัติ'],
   ];

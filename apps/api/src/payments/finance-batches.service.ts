@@ -15,7 +15,16 @@ import { PrismaService, Tx } from '../prisma/prisma.service';
 import { billingDto, billingText } from './billing';
 import { statusLabel, UNIVERSITY_NAME } from './documents/labels';
 import { renderTablePdf } from './documents/pdf';
-import { BATCH_TEMPLATE_KEY, BatchColumnKey, DEFAULT_BATCH_TEMPLATE, isBatchTemplate } from './documents/templates';
+import {
+  ATTENDEE_TEMPLATE_KEY,
+  AttendeeColumnKey,
+  BATCH_TEMPLATE_KEY,
+  BatchColumnKey,
+  DEFAULT_ATTENDEE_TEMPLATE,
+  DEFAULT_BATCH_TEMPLATE,
+  isAttendeeTemplate,
+  isBatchTemplate,
+} from './documents/templates';
 import { renderTableXlsx } from './documents/xlsx';
 import { BatchQueryDto, CreateBatchDto, RecordReceiptsDto } from './payments.dto';
 
@@ -31,7 +40,7 @@ type BatchRow = Prisma.FinanceBatchGetPayload<{ include: typeof batchInclude }>;
 const itemInclude = {
   payment: {
     include: {
-      order: { include: { registration: { select: { referenceNo: true } } } },
+      order: { include: { registration: { select: { referenceNo: true } }, group: { select: { groupNo: true } }, _count: { select: { lines: true } } } },
       verifiedBy: { select: { displayName: true } },
       receipts: { where: { status: { not: 'VOIDED' } } },
     },
@@ -160,6 +169,9 @@ export class FinanceBatchesService {
         isActive: i.isActive,
         paymentId: i.paymentId,
         paymentNo: i.payment.paymentNo,
+        /** FIN-10: set for a group's single combined payment (one receipt + attendee list). */
+        groupNo: i.payment.order.group?.groupNo ?? null,
+        memberCount: i.payment.order.group ? i.payment.order._count.lines : null,
         orderNo: i.payment.order.orderNo,
         referenceNo: i.payment.order.registration?.referenceNo ?? null,
         payerName: i.payment.order.payerName,
@@ -321,6 +333,75 @@ export class FinanceBatchesService {
     return new StreamableFile(body, {
       type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       disposition: `attachment; filename="${b.batchNo}.${format}"`,
+    });
+  }
+
+  /**
+   * FIN-10: list of the people covered by a group's single receipt (issued in the organization's
+   * name), to attach to the receipt. Rendered from `finance.groupReceiptAttachmentTemplate`.
+   */
+  async groupAttendees(id: string, paymentId: string, format: 'pdf' | 'xlsx', user: AuthUser, meta: RequestMeta) {
+    const b = await this.load(id, user, 'finance_batch:export');
+    const item = await this.prisma.financeBatchItem.findFirst({
+      where: { batchId: id, paymentId },
+      include: {
+        payment: {
+          include: {
+            receipts: { where: { status: { not: 'VOIDED' } } },
+            order: {
+              include: {
+                group: { select: { groupNo: true, participantOrganization: { select: { nameTh: true } } } },
+                lines: {
+                  include: { registration: { select: { referenceNo: true, prefix: true, firstName: true, lastName: true, status: true, participantType: { select: { nameTh: true } } } } },
+                  orderBy: { createdAt: 'asc' },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!item) throw Errors.notFound('รายการในชุดนำส่ง');
+    const o = item.payment.order;
+    if (!o.groupId || !o.group) throw Errors.validation('รายชื่อแนบใบเสร็จใช้กับการชำระแบบกลุ่มเท่านั้น');
+    const receipt = item.payment.receipts[0];
+    const template = await this.settings.get(ATTENDEE_TEMPLATE_KEY, DEFAULT_ATTENDEE_TEMPLATE, isAttendeeTemplate);
+    const total = o.lines.reduce((s, l) => s.plus(l.amount), new Prisma.Decimal(0));
+    const vars = {
+      universityName: UNIVERSITY_NAME,
+      receiptNo: receipt ? formatReceiptNo(receipt.fiscalYear, receipt.receiptNo) : '(ยังไม่ออกเลขที่)',
+      receiptDate: receipt ? formatThaiDate(receipt.issuedAt, 'long') : '-',
+      billingName: o.billingName ?? o.payerName,
+      billingTaxId: billingText(billingDto(o)) ? `เลขผู้เสียภาษี ${o.billingTaxId ?? ''}` : '',
+      organizationName: o.group.participantOrganization.nameTh,
+      groupNo: o.group.groupNo,
+      orderNo: o.orderNo,
+      eventCode: b.event.code,
+      eventTitle: b.event.titleTh,
+      eventDate: formatThaiDate(b.event.startAt, 'long'),
+      itemCount: o.lines.length,
+      total: formatMoney(total.toFixed(2)),
+      totalText: bahtText(total.toFixed(2)),
+      printedAt: formatThaiDateTime(new Date()),
+    };
+    const statusTh = (s: string) => (s === 'CANCELLED' ? 'ยกเลิก' : s === 'CONFIRMED' ? 'ยืนยันแล้ว' : s);
+    const cells = (l: (typeof o.lines)[number], idx: number): Record<AttendeeColumnKey, string> => ({
+      seq: String(idx + 1),
+      referenceNo: l.registration.referenceNo,
+      name: [l.registration.prefix, l.registration.firstName, l.registration.lastName].filter(Boolean).join(' '),
+      participantType: l.registration.participantType.nameTh,
+      feeName: l.feeName,
+      status: statusTh(l.registration.status),
+      amount: formatMoney(l.amount.toFixed(2)),
+    });
+    const body =
+      format === 'pdf'
+        ? await renderTablePdf({ template, vars, rows: o.lines.map(cells), total: vars.total, watermark: receipt ? undefined : 'ฉบับร่าง', title: `รายชื่อแนบใบเสร็จ ${o.group.groupNo}` })
+        : await renderTableXlsx({ template, vars, rows: o.lines.map((l, idx) => ({ ...cells(l, idx), amount: Number(l.amount) })), total: Number(total), sheetName: 'รายชื่อแนบใบเสร็จ' });
+    await this.audit.log({ actorId: user.id, action: 'finance_batch.export_attendees', entityType: 'finance_batch', entityId: id, after: { paymentId, groupNo: o.group.groupNo, format }, meta });
+    return new StreamableFile(body, {
+      type: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="${o.group.groupNo}-attendees.${format}"`,
     });
   }
 

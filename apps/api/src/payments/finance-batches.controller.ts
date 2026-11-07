@@ -50,6 +50,19 @@ export class FinanceBatchesController {
     return this.batches.export(id, q.format, u, m);
   }
 
+  @RequirePermissions('finance_batch:export')
+  @ApiOperation({ summary: 'รายชื่อผู้เข้าร่วมแนบใบเสร็จฉบับเดียวของกลุ่ม (FIN-10) — PDF / Excel' })
+  @Get(':id/items/:paymentId/attendees')
+  attendees(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+    @Query() q: ExportFormatDto,
+    @CurrentUser() u: AuthUser,
+    @ReqMeta() m: RequestMeta,
+  ) {
+    return this.batches.groupAttendees(id, paymentId, q.format, u, m);
+  }
+
   @RequirePermissions('finance_batch:submit')
   @Post(':id/submit')
   @HttpCode(200)

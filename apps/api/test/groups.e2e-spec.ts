@@ -259,6 +259,22 @@ describe('changes after submission', () => {
     expect(fin.body.data[0].referenceNo).toBe(d.groupNo);
   });
 
+  it('FIN-10: the group is one batch item (one receipt) with a downloadable attendee list', async () => {
+    const d = await detail(g1);
+    const created = await orgFinance.post('/api/v1/finance/batches', { eventId });
+    expect(created.status).toBe(201);
+    const batchId = created.body.data.id;
+    const items = (await orgFinance.get(`/api/v1/finance/batches/${batchId}`)).body.data.items;
+    const item = items.find((i: { groupNo: string | null }) => i.groupNo === d.groupNo);
+    expect(item).toMatchObject({ groupNo: d.groupNo, memberCount: d.members.length, amount: '1700.00' });
+    const xlsx = await orgFinance.get(`/api/v1/finance/batches/${batchId}/items/${item.paymentId}/attendees?format=xlsx`);
+    expect(xlsx.status).toBe(200);
+    expect(xlsx.headers['content-type']).toContain('spreadsheetml');
+    const pdf = await orgFinance.get(`/api/v1/finance/batches/${batchId}/items/${item.paymentId}/attendees?format=pdf`);
+    expect(pdf.headers['content-type']).toContain('application/pdf');
+    expect((await orgFinance.get(`/api/v1/finance/batches/${batchId}/items/${randomUUID()}/attendees?format=pdf`)).status).toBe(404);
+  });
+
   it('after payment members cannot be added, but can be substituted (logged)', async () => {
     const add = await coordinator.post(`/api/v1/groups/${g1}/members`, member('late'));
     expect(add.status).toBe(409);

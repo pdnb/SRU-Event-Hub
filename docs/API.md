@@ -61,6 +61,7 @@ GET  /settings          PATCH /settings/:key {value}  (ต้องคงชน�
 ## Endpoints (P2c)
 ```text
 GET  /finance/batches/:id/export?format=pdf|xlsx              รายงานนำส่ง (แม่แบบ finance.remittanceReportTemplate)
+GET  /finance/batches/:id/items/:paymentId/attendees?format=pdf|xlsx   รายชื่อแนบใบเสร็จฉบับเดียวของกลุ่ม (FIN-10, แม่แบบ finance.groupReceiptAttachmentTemplate)
 GET  /finance/cashier-sessions/:id/remittance-document?format=pdf|xlsx   ใบนำส่งเงินสด (หลังปิดกะ; แม่แบบ finance.cashRemittanceTemplate)
 GET  /finance/cashier-sessions/:id/offline-pack · /:id/offline-sheet (PDF)   โหมดออฟไลน์ FIN-12
 POST /finance/cashier-sessions/:id/collect {orderId, capturedAt?}   capturedAt = เวลารับเงินจริงของรายการที่บันทึกออฟไลน์ → 409 OFFLINE_CONFLICT ถ้าใบแจ้งไม่อยู่ในสถานะรอชำระแล้ว

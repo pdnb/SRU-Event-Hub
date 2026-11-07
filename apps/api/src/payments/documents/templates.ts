@@ -100,6 +100,35 @@ export const DEFAULT_CASH_TEMPLATE: DocumentTemplate<CashColumnKey> = {
   signatures: ['ผู้รับเงิน / ผู้นำส่ง', 'ผู้รับนำส่ง (การเงิน)'],
 };
 
+/**
+ * FIN-10 (answered 2026-11-07): a group pays with ONE receipt in the organization's name; this list
+ * of the people it covers is attached to the receipt (and serves as the payer's disbursement evidence).
+ */
+export const ATTENDEE_COLUMN_KEYS = ['seq', 'referenceNo', 'name', 'participantType', 'feeName', 'status', 'amount'] as const;
+export type AttendeeColumnKey = (typeof ATTENDEE_COLUMN_KEYS)[number];
+export const ATTENDEE_TEMPLATE_KEY = 'finance.groupReceiptAttachmentTemplate';
+export const DEFAULT_ATTENDEE_TEMPLATE: DocumentTemplate<AttendeeColumnKey> = {
+  orientation: 'portrait',
+  titleLines: ['รายชื่อผู้เข้าร่วมแนบใบเสร็จรับเงิน', '{universityName}'],
+  infoLines: [
+    'ใบเสร็จรับเงินเลขที่: {receiptNo}    ลงวันที่: {receiptDate}',
+    'ออกในนาม: {billingName}    {billingTaxId}',
+    'หน่วยงาน/องค์กร: {organizationName}    เลขที่กลุ่ม: {groupNo}    ใบแจ้งชำระ: {orderNo}',
+    'กิจกรรม: {eventCode} {eventTitle}    วันที่จัด: {eventDate}',
+  ],
+  columns: [
+    { key: 'seq', label: 'ลำดับ', width: 6, align: 'center' },
+    { key: 'referenceNo', label: 'เลขอ้างอิง', width: 17 },
+    { key: 'name', label: 'ชื่อ-นามสกุล', width: 30 },
+    { key: 'participantType', label: 'ประเภทผู้เข้าร่วม', width: 16 },
+    { key: 'feeName', label: 'อัตรา', width: 15 },
+    { key: 'amount', label: 'จำนวนเงิน (บาท)', width: 14, align: 'right' },
+  ],
+  totalLabel: 'รวมทั้งสิ้น',
+  footerNotes: ['({totalText})', 'จำนวน {itemCount} คน', 'ขอรับรองว่าผู้มีรายชื่อข้างต้นเป็นผู้ลงทะเบียนเข้าร่วมกิจกรรมตามใบเสร็จรับเงินฉบับนี้'],
+  signatures: ['ผู้ตรวจสอบ (กองคลัง)'],
+};
+
 // ───────────── validation ─────────────
 
 const isStrArr = (v: unknown, max: number): v is string[] =>
@@ -130,6 +159,8 @@ export const isCashTemplate = (v: unknown): v is DocumentTemplate<CashColumnKey>
 
 registerSettingValidator(BATCH_TEMPLATE_KEY, (v) => templateError(v, BATCH_COLUMN_KEYS));
 registerSettingValidator(CASH_TEMPLATE_KEY, (v) => templateError(v, CASH_COLUMN_KEYS));
+export const isAttendeeTemplate = (v: unknown): v is DocumentTemplate<AttendeeColumnKey> => templateError(v, ATTENDEE_COLUMN_KEYS) === null;
+registerSettingValidator(ATTENDEE_TEMPLATE_KEY, (v) => templateError(v, ATTENDEE_COLUMN_KEYS));
 
 /** "{batchNo}" → vars.batchNo. Unknown placeholders stay visible so a typo is noticed on paper. */
 export function fill(text: string, vars: Record<string, string | number | null | undefined>): string {
