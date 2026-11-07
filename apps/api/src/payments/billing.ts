@@ -7,8 +7,8 @@ import type { BillingType } from '../generated/prisma/client';
 /**
  * FIN-9: who the official receipt (issued by กองคลัง) is made out to. Collected with the
  * registration or later from the payer's status page, and printed on the remittance report so
- * กองคลัง can issue the receipt in the right name. Tax rules for juristic receipts are still to be
- * confirmed (FIN-9) — the system only records and validates the data.
+ * กองคลัง can issue the receipt in the right name. FIN-9 (answered 2026-11-07): no tax is computed —
+ * the system only records and validates the payer's name, tax id, branch and address.
  */
 export class BillingInputDto {
   @IsIn(['INDIVIDUAL', 'JURISTIC']) type!: BillingType;
