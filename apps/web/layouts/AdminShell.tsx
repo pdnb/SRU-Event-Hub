@@ -72,7 +72,7 @@ const MENU: Item[] = [
   { key: '/admin/certificates', label: 'เกียรติบัตร', icon: <SafetyCertificateOutlined />, perm: 'certificate:view' },
   { key: '/admin/evaluations', label: 'แบบประเมิน', icon: <FileDoneOutlined />, perm: 'evaluation:view' },
   { key: '/admin/venues', label: 'สถานที่และทรัพยากร', icon: <HomeOutlined />, perm: 'venue:view' },
-  { key: 'reports', label: 'รายงาน', icon: <BarChartOutlined />, phase: 'P5' },
+  { key: '/admin/reports', label: 'รายงาน', icon: <BarChartOutlined />, perm: 'report:view' },
   { key: '/admin/organizations', label: 'จัดการหน่วยงาน', icon: <ClusterOutlined />, perm: 'organization:view' },
   { key: '/admin/users', label: 'จัดการผู้ใช้งาน', icon: <TeamOutlined />, perm: 'user:view' },
   { key: '/admin/notifications', label: 'การแจ้งเตือน', icon: <BellOutlined />, perm: 'system_setting:view' },

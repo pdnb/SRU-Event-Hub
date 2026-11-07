@@ -17,7 +17,7 @@
 | §4.10 Certificates, §4.11 Evaluation | P5a | ✅ API `apps/api/src/certificates`, `apps/api/src/evaluations` · เว็บ `/admin/certificates`, `/admin/evaluations`, `/my/certificates`, `/my/evaluations`, `/verify`, ส่วนท้ายหน้าตรวจสถานะ (guest) — สำเนา spec ไม่มีรายละเอียด §4.10+ จึงออกแบบตามขอบเขตใน ROADMAP (ดู OPEN_QUESTIONS CERT-*, EVAL-1) |
 | §4.12 Notifications | P5b | ✅ `apps/api/src/notifications` (in-app, อีเมล, LINE, dispatcher จาก audit log, เตือนก่อนวันงาน) · เว็บ กระดิ่งแจ้งเตือน, `/my/notifications`, `/admin/notifications` |
 | §4.13 Venues | P5b | ✅ `apps/api/src/venues` · เว็บ `/admin/venues`, แท็บ "สถานที่/อุปกรณ์" ในหน้ากิจกรรม — exclusion constraint กันจองห้องซ้อน + trigger กันยืมอุปกรณ์เกินจำนวน |
-| §4.14 Dashboard | P1 พื้นฐาน / P5 ตามบทบาท | |
+| §4.14 Dashboard | P5c | ✅ `apps/api/src/reports` (`/dashboard/tasks`, `/reports/*`) · เว็บ `/admin` (ตามบทบาท), `/admin/reports` · Playwright `apps/web/e2e` |
 | §5 RBAC | P1 | ✅ 15 บทบาท, permission ระดับ action รวม finance actions, data scope, SoD |
 | §6 Database | P1 | ✅ ดู [DATABASE.md](DATABASE.md) |
 | §7 UI/UX | P1 | ✅ Sarabun, พ.ศ., responsive, page header/breadcrumb/states, สีสถานะมาตรฐาน — สีแบรนด์รอยืนยัน (UI-1) |

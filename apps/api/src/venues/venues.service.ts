@@ -7,7 +7,7 @@ import type { RequestMeta } from '../common/decorators';
 import { AppError, Errors } from '../common/errors';
 import { Paginated } from '../common/pagination';
 import { Prisma } from '../generated/prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService, Tx } from '../prisma/prisma.service';
 import {
   AvailabilityQueryDto,
   BookingQueryDto,
@@ -228,6 +228,7 @@ export class VenuesService {
     const auto = v.autoApprove;
     const b = await this.mapConflict(() =>
       this.prisma.$transaction(async (tx) => {
+        if (auto) await this.lockVenue(tx, v.id);
         const b = await tx.venueBooking.create({
           data: {
             venueId: v.id, eventId: dto.eventId ?? null, startAt: from, endAt: to, purpose: dto.purpose?.trim() || null, requestedById: user.id,
@@ -249,6 +250,9 @@ export class VenuesService {
     if (decision === 'APPROVE' && b.endAt <= new Date()) throw Errors.invalidState('ช่วงเวลาที่ขอจองผ่านไปแล้ว');
     return this.mapConflict(() =>
       this.prisma.$transaction(async (tx) => {
+        // Approvals of one room are serialised: without this, two concurrent approvals each hold their own
+        // booking row while the exclusion check waits for the other → deadlock (40P01) instead of a clean conflict.
+        if (decision === 'APPROVE') await this.lockVenue(tx, b.venueId);
         const n = await tx.venueBooking.updateMany({
           where: { id, status: 'PENDING' },
           data: { status: decision === 'APPROVE' ? 'APPROVED' : 'REJECTED', decidedById: user.id, decidedAt: new Date(), decisionNote: note?.trim() || null },
@@ -406,11 +410,16 @@ export class VenuesService {
       return await fn();
     } catch (e) {
       const code = (e as { code?: string; meta?: { code?: string } })?.meta?.code ?? (e as { code?: string })?.code;
-      if (code === '23P01' || String((e as Error)?.message ?? '').includes('venue_bookings_no_overlap')) {
+      const text = String((e as Error)?.message ?? '');
+      if (code === '23P01' || code === '40P01' || /venue_bookings_no_overlap|deadlock detected/i.test(text)) {
         throw new AppError('VENUE_CONFLICT', 'สถานที่ถูกจองในช่วงเวลานี้แล้ว (มีการอนุมัติรายการอื่นก่อน)', HttpStatus.CONFLICT);
       }
       throw e;
     }
+  }
+
+  private async lockVenue(tx: Tx, venueId: string) {
+    await tx.$queryRaw`SELECT id FROM venues WHERE id = ${venueId}::uuid FOR UPDATE`;
   }
 
   private async unique<T>(fn: () => Promise<T>): Promise<T> {

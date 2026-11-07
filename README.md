@@ -41,6 +41,7 @@ pnpm dev                          # api :4000, web :3000
 pnpm --filter @sru/shared-utils test   # unit: เงิน, บาทถ้วน, PromptPay (เทียบกับไลบรารีอ้างอิง), ปีงบประมาณ
 pnpm --filter @sru/api test            # unit: state machine ของกิจกรรม
 pnpm --filter @sru/api test:e2e        # e2e ผ่าน HTTP + PostgreSQL จริง (ต้อง infra:up + seed)
+pnpm --filter @sru/web test:e2e        # Playwright (desktop + mobile) — ต้องรัน `pnpm dev` และ seed ก่อน; อ่านรหัสผ่าน demo จาก .env
 ```
 
 E2E ครอบคลุม: login/CSRF/refresh-token rotation + reuse detection, สิทธิ์ฝั่ง backend, workflow อนุมัติหลายขั้น + separation of duties, Idempotency-Key, กันสมัครซ้ำ, **การลงทะเบียนพร้อมกันไม่เกินจำนวนที่นั่ง**, รายชื่อสำรองและการเลื่อนลำดับอัตโนมัติ, export Excel

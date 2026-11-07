@@ -107,7 +107,8 @@ describe('venue bookings', () => {
   });
 
   it('a new request for a taken slot is refused up front', async () => {
-    const res = await manager.post('/api/v1/venue-bookings', { venueId: roomId, startAt: day(3, 2), endAt: day(3, 3) });
+    // [03:00, 04:00) overlaps both earlier requests, whichever of them won the race
+    const res = await manager.post('/api/v1/venue-bookings', { venueId: roomId, startAt: day(3, 3), endAt: day(3, 4) });
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('VENUE_CONFLICT');
     const adjacent = await manager.post('/api/v1/venue-bookings', { venueId: roomId, startAt: day(3, 5), endAt: day(3, 6) });
