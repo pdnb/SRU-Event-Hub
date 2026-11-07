@@ -4,8 +4,10 @@ import type { PrismaClient } from '../../src/generated/prisma/client';
  * Finance reference data (FIN-4, FIN-5). The values below are PLACEHOLDERS for development:
  * the real receiving account, PromptPay id and income codes must come from กองคลัง
  * (docs/OPEN_QUESTIONS.md) and are entered through the finance settings screen.
+ * FIN-4: money is received into the university's central account (organizationId = null),
+ * which only university-wide finance staff may reconcile.
  */
-export async function seedFinance(prisma: PrismaClient, orgIds: Map<string, string>) {
+export async function seedFinance(prisma: PrismaClient) {
   const incomeCodes = [
     ['INC-REG', 'รายได้ค่าลงทะเบียนอบรม/สัมมนา (ตัวอย่าง)'],
     ['INC-CONF', 'รายได้ค่าลงทะเบียนประชุมวิชาการ (ตัวอย่าง)'],
@@ -17,7 +19,7 @@ export async function seedFinance(prisma: PrismaClient, orgIds: Map<string, stri
   if (!(await prisma.bankAccount.count())) {
     await prisma.bankAccount.create({
       data: {
-        organizationId: orgIds.get('FIN') ?? null,
+        organizationId: null, // บัญชีรับเงินกลาง (FIN-4)
         bankName: 'ธนาคารกรุงไทย (ตัวอย่าง)',
         branch: 'สาขาสุราษฎร์ธานี',
         accountNo: '000-0-00000-0',

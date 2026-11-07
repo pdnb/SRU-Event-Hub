@@ -310,7 +310,7 @@ async function main() {
   await seedVenues(orgIds);
   await seedSettings();
   await seedWorkflow(orgIds);
-  await seedFinance(prisma, orgIds);
+  await seedFinance(prisma);
   if (DEMO) {
     const pw = await seedDemo(orgIds);
     await seedFinanceDemo(prisma);
