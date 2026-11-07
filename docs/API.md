@@ -200,6 +200,19 @@ GET  /notification-templates    PUT /notification-templates/:code/:channel {subj
 ```
 error code ใหม่: `VENUE_CONFLICT` (details.clash), `RESOURCE_UNAVAILABLE` (details: quantity, used, available), `DUPLICATE_CODE`, `LINE_DISABLED`
 
+## Endpoints (P5c — Dashboard และรายงาน)
+```text
+GET /dashboard/tasks → [{key, label, count, href, tone}]   — เฉพาะงานที่ผู้ใช้มีสิทธิ์ทำ นับภายในขอบเขตข้อมูลของสิทธิ์นั้น (ไม่มีงาน = [])
+# รายงาน (report:view; ขอบเขต ALL / หน่วยงาน (tree) / กิจกรรมของตนเอง) — ตัวกรองร่วม:
+#   fiscalYear (พ.ศ., ค่าเริ่มต้นปีงบปัจจุบัน) | from & to (ISO, ≤ 3 ปี) · organizationId (รวมหน่วยงานย่อย) · categoryId · eventTypeId
+GET /reports/overview      → {period, kpis, trend[ทุกเดือนของช่วง], byOrganization, byCategory, byParticipantType}
+GET /reports/events?sort=startAt|confirmed|attendanceRate|revenue|satisfaction&order&search&page&perPage
+GET /reports/events/export (report:export, .xlsx: สรุป / รายกิจกรรม / ตามหน่วยงาน / ตามประเภทผู้เข้าร่วม — บันทึก audit)
+GET /reports/participants  → {totals, topAffiliations, frequency}
+GET /reports/finance       (ต้องมี payment:view ด้วย) → ตามวันที่ตรวจรับเงิน/จ่ายคืน: {totals, monthly, outstanding}
+```
+นิยาม: กิจกรรมที่นับ = ผ่านอนุมัติแล้ว (ไม่รวมฉบับร่าง/รออนุมัติ/ไม่อนุมัติ) ตามวันเริ่มกิจกรรม · อัตราการเข้าร่วม = เช็กอิน (เข้าร่วม/สาย) ÷ ยืนยันแล้ว เฉพาะกิจกรรมที่จบแล้ว · รายรับ = รายการชำระที่ตรวจแล้ว − คืนเงินที่จ่ายแล้ว · ความพึงพอใจ = ค่าเฉลี่ยคำถามแบบมาตรวัด 5 ระดับ ถ่วงน้ำหนักตามจำนวนผู้ตอบ
+
 ## Endpoints (P3b — สมัครสมาชิก)
 ```text
 POST /auth/register {email, password (≥10), displayName, phone?}  → 202 (คำตอบเหมือนกันเสมอ ไม่บอกว่าอีเมลมีบัญชีแล้วหรือไม่)

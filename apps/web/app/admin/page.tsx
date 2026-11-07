@@ -1,70 +1,98 @@
 'use client';
 
-import { CalendarOutlined, CheckSquareOutlined, ProjectOutlined, TeamOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, RightOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Col, Row, Statistic, Typography } from 'antd';
-import { List } from '@/components/SimpleList';
+import { Badge, Card, Col, Empty, Row, Skeleton, Typography } from 'antd';
 import Link from 'next/link';
 import type { EventSummaryDto } from '@sru/shared-types';
+import { ColumnChart } from '@/components/charts/charts';
 import { ThaiDateRange } from '@/components/Format';
 import { PageHeader } from '@/components/PageHeader';
+import { ErrorState } from '@/components/QueryState';
+import { List } from '@/components/SimpleList';
 import { StatusTag } from '@/components/StatusTag';
+import { currentFiscalYear, KpiTiles, monthLabel } from '@/features/reports/ReportViews';
+import type { DashboardTask, Overview } from '@/features/reports/types';
 import { useCan, useMe } from '@/hooks/useMe';
 import { api } from '@/services/api';
 
 /**
- * Phase 1 dashboard: counts derived from the scoped event list + pending approvals.
- * Role-specific dashboards (executive, finance, organizer, coordinator) arrive with their modules.
+ * Role-aware dashboard: "waiting for you" (only what this user can act on, counted inside their
+ * data scope), this fiscal year's KPIs for users with report access, and upcoming events.
  */
-function useEventCount(status: string | undefined, enabled: boolean) {
-  return useQuery({
-    queryKey: ['admin-events', 'count', status],
-    queryFn: () => api.getPage<EventSummaryDto>('/events', { perPage: 1, status }),
-    enabled,
-  });
-}
-
 export default function DashboardPage() {
   const me = useMe();
   const can = useCan();
-  const canEvents = can('event:view');
-  const all = useEventCount(undefined, canEvents);
-  const open = useEventCount('REGISTRATION_OPEN', canEvents);
-  const pendingApproval = useEventCount('PENDING_APPROVAL', canEvents);
+  const tasks = useQuery({ queryKey: ['dashboard-tasks'], queryFn: () => api.get<DashboardTask[]>('/dashboard/tasks'), refetchInterval: 120_000 });
+  const fy = currentFiscalYear();
+  const overview = useQuery({ queryKey: ['report-overview', { fiscalYear: fy }], queryFn: () => api.get<Overview>('/reports/overview', { fiscalYear: fy }), enabled: can('report:view') });
   const upcoming = useQuery({
     queryKey: ['admin-events', 'upcoming'],
     queryFn: () => api.getPage<EventSummaryDto>('/events', { perPage: 6, from: new Date().toISOString(), order: 'asc' }),
-    enabled: canEvents,
+    enabled: can('event:view'),
   });
-  const myApprovals = useQuery({ queryKey: ['approvals-pending'], queryFn: () => api.get<unknown[]>('/approvals/pending'), enabled: can('approval:approve') });
-
-  const stats = [
-    { title: 'กิจกรรมทั้งหมด', value: all.data?.meta.total, icon: <ProjectOutlined />, show: canEvents },
-    { title: 'กำลังเปิดรับสมัคร', value: open.data?.meta.total, icon: <TeamOutlined />, show: canEvents },
-    { title: 'อยู่ระหว่างอนุมัติ', value: pendingApproval.data?.meta.total, icon: <CalendarOutlined />, show: canEvents },
-    { title: 'รอท่านพิจารณา', value: myApprovals.data?.length, icon: <CheckSquareOutlined />, show: can('approval:approve'), href: '/admin/approvals' },
-  ].filter((s) => s.show);
 
   return (
     <>
-      <PageHeader title={`สวัสดี ${me.data?.displayName ?? ''}`} description="ภาพรวมกิจกรรมในขอบเขตที่ท่านรับผิดชอบ" />
-      <Row gutter={[16, 16]}>
-        {stats.map((s) => (
-          <Col key={s.title} xs={12} lg={6}>
-            <Card>
-              {s.href ? (
-                <Link href={s.href}>
-                  <Statistic title={s.title} value={s.value ?? '-'} prefix={s.icon} />
+      <PageHeader title={`สวัสดี ${me.data?.displayName ?? ''}`} description="งานที่รอท่านและภาพรวมในขอบเขตที่ท่านรับผิดชอบ" />
+
+      <Card title="งานที่รอท่าน" style={{ marginBottom: 16 }}>
+        {tasks.isPending ? (
+          <Skeleton active paragraph={{ rows: 2 }} />
+        ) : tasks.isError ? (
+          <ErrorState error={tasks.error} onRetry={() => tasks.refetch()} />
+        ) : !tasks.data.length ? (
+          <Empty image={<CheckCircleOutlined style={{ fontSize: 40, color: '#16a34a' }} />} description="ไม่มีงานค้าง" />
+        ) : (
+          <Row gutter={[12, 12]}>
+            {tasks.data.map((t) => (
+              <Col key={t.key} xs={24} sm={12} xl={8}>
+                <Link href={t.href} style={{ display: 'block' }}>
+                  <Card size="small" hoverable styles={{ body: { display: 'flex', alignItems: 'center', gap: 12 } }}>
+                    <Badge count={t.count} overflowCount={999} color={t.tone === 'action' ? '#1f3a8a' : '#6b7280'} />
+                    <span style={{ flex: 1, color: '#111827' }}>{t.label}</span>
+                    <RightOutlined style={{ color: '#9ca3af' }} />
+                  </Card>
                 </Link>
-              ) : (
-                <Statistic title={s.title} value={s.value ?? '-'} prefix={s.icon} />
-              )}
-            </Card>
-          </Col>
-        ))}
-      </Row>
-      {canEvents && (
-        <Card title="กิจกรรมที่กำลังจะมาถึง" style={{ marginTop: 16 }} extra={<Link href="/admin/events">ดูทั้งหมด</Link>}>
+              </Col>
+            ))}
+          </Row>
+        )}
+      </Card>
+
+      {can('report:view') && (
+        <Card
+          title={`ภาพรวมปีงบประมาณ ${fy}`}
+          extra={<Link href="/admin/reports">รายงานทั้งหมด</Link>}
+          style={{ marginBottom: 16 }}
+        >
+          {overview.isPending ? (
+            <Skeleton active />
+          ) : overview.isError ? (
+            <ErrorState error={overview.error} onRetry={() => overview.refetch()} />
+          ) : (
+            <>
+              <KpiTiles k={overview.data.kpis} />
+              <div style={{ marginTop: 16 }}>
+                <ColumnChart
+                  ariaLabel="ผู้ลงทะเบียนและผู้เข้าร่วมรายเดือน"
+                  data={overview.data.trend}
+                  category="month"
+                  formatCategory={monthLabel}
+                  height={200}
+                  series={[
+                    { key: 'confirmed', label: 'ลงทะเบียน (ยืนยัน)' },
+                    { key: 'attended', label: 'เข้าร่วมจริง' },
+                  ]}
+                />
+              </div>
+            </>
+          )}
+        </Card>
+      )}
+
+      {can('event:view') && (
+        <Card title="กิจกรรมที่กำลังจะมาถึง" extra={<Link href="/admin/events">ดูทั้งหมด</Link>}>
           <List
             loading={upcoming.isPending}
             dataSource={upcoming.data?.items ?? []}

@@ -11,6 +11,7 @@ import { CertificatesModule } from './certificates/certificates.module';
 import { CheckinModule } from './checkin/checkin.module';
 import { EvaluationsModule } from './evaluations/evaluations.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ReportsModule } from './reports/reports.module';
 import { VenuesModule } from './venues/venues.module';
 import { CsrfGuard, JwtAuthGuard, PermissionsGuard } from './auth/guards';
 import { CategoriesModule } from './categories/categories.module';
@@ -80,6 +81,7 @@ import { UsersModule } from './users/users.module';
     CertificatesModule,
     VenuesModule,
     NotificationsModule,
+    ReportsModule,
     AdminModule,
   ],
   controllers: [HealthController],
