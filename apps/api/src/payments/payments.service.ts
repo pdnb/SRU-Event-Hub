@@ -2,6 +2,7 @@ import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { BankAccountSnapshot, FinancePaymentRowDto, PaymentDto, PaymentOrderDto } from '@sru/shared-types';
 import { bahtText, formatReceiptNo, promptPayPayload } from '@sru/shared-utils';
+import { PROMPTPAY_SUPPORTED } from './promptpay-policy';
 import { createHash } from 'node:crypto';
 import type { AuthUser } from '../auth/auth.types';
 import { AccessService } from '../common/access.service';
@@ -221,7 +222,7 @@ export class PaymentsService {
       event.incomeCodeId ? tx.incomeCode.findUnique({ where: { id: event.incomeCodeId } }) : null,
     ]);
     const snap: BankAccountSnapshot | null = bank
-      ? { bankName: bank.bankName, branch: bank.branch, accountNo: bank.accountNo, accountName: bank.accountName, promptPayId: bank.promptPayId }
+      ? { bankName: bank.bankName, branch: bank.branch, accountNo: bank.accountNo, accountName: bank.accountName, promptPayId: PROMPTPAY_SUPPORTED ? bank.promptPayId : null }
       : null;
     return {
       bankAccountSnapshot: snap ? (snap as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
@@ -549,7 +550,7 @@ export class PaymentsService {
     const amount = moneyOut(o.amount)!;
     const bank = o.bankAccountSnapshot as BankAccountSnapshot | null;
     let qr: string | null = null;
-    if (bank?.promptPayId && o.status === 'UNPAID') {
+    if (PROMPTPAY_SUPPORTED && bank?.promptPayId && o.status === 'UNPAID') {
       try {
         qr = promptPayPayload(bank.promptPayId, amount);
       } catch (e) {

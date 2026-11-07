@@ -122,16 +122,20 @@ describe('paid event setup', () => {
 });
 
 describe('registration → payment order', () => {
-  it('a paying registrant holds a seat as PENDING_PAYMENT with a backend-computed order + PromptPay QR', async () => {
+  it('a paying registrant holds a seat as PENDING_PAYMENT with a backend-computed order (bank transfer, no PromptPay QR)', async () => {
     const res = await register('EXTERNAL', 'payer-a@example.com');
     expect(res.status).toBe(201);
     regs.a = res.body.data;
     expect(regs.a!.status).toBe('PENDING_PAYMENT');
     expect(regs.a!.payment).toMatchObject({ amount: '800.00', amountText: 'แปดร้อยบาทถ้วน', status: 'UNPAID' });
     expect(regs.a!.payment!.orderNo).toMatch(/^INV-\d{4}-\d{6}$/);
-    // EMVCo tag 54 carries the amount; payload ends with a CRC16 checksum
-    expect(regs.a!.payment!.promptPayPayload).toContain('5406800.00');
-    expect(regs.a!.payment!.promptPayPayload).toMatch(/6304[0-9A-F]{4}$/);
+    // FIN-4: กองคลังไม่รองรับพร้อมเพย์ — no QR even if an account still carries an old PromptPay id
+    expect(regs.a!.payment!.promptPayPayload).toBeNull();
+  });
+
+  it('FIN-4: a bank account cannot be given a PromptPay id', async () => {
+    const res = await centralFinance.post('/api/v1/finance/bank-accounts', { bankName: 'ธนาคารทดสอบ', accountNo: '123-4-56789-0', accountName: 'ทดสอบ', promptPayId: '0123456789' });
+    expect(res.status).toBe(422);
   });
 
   it('a 0-baht rate confirms immediately without an order', async () => {

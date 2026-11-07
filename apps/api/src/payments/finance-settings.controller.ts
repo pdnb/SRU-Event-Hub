@@ -6,6 +6,14 @@ import { CurrentUser, ReqMeta, RequestMeta, RequirePermissions } from '../common
 import { Errors } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { BankAccountDto, IncomeCodeDto } from './payments.dto';
+import { PROMPTPAY_SUPPORTED } from './promptpay-policy';
+
+/** FIN-4: PromptPay is not supported — a PromptPay id is refused and any stored one is cleared on save. */
+function promptPayIdFor(dto: BankAccountDto): string | null {
+  if (PROMPTPAY_SUPPORTED) return dto.promptPayId ?? null;
+  if (dto.promptPayId) throw Errors.validation('กองคลังไม่รองรับการรับชำระผ่านพร้อมเพย์ (FIN-4) — เว้นรหัสพร้อมเพย์ว่างไว้');
+  return null;
+}
 
 /** Receiving bank accounts and income codes (managed by กองคลัง: bank_account:*, income_code:*). */
 @ApiTags('finance-settings')
@@ -25,7 +33,7 @@ export class FinanceSettingsController {
       this.prisma.incomeCode.findMany({ where: { isActive: true }, orderBy: { code: 'asc' } }),
     ]);
     return {
-      bankAccounts: bankAccounts.map((b) => ({ id: b.id, label: `${b.bankName} ${b.accountNo} (${b.accountName})`, organizationName: b.organization?.nameTh ?? 'ส่วนกลาง', hasPromptPay: !!b.promptPayId })),
+      bankAccounts: bankAccounts.map((b) => ({ id: b.id, label: `${b.bankName} ${b.accountNo} (${b.accountName})`, organizationName: b.organization?.nameTh ?? 'ส่วนกลาง', hasPromptPay: PROMPTPAY_SUPPORTED && !!b.promptPayId })),
       incomeCodes: incomeCodes.map((c) => ({ id: c.id, code: c.code, label: `${c.code} ${c.nameTh}` })),
     };
   }
@@ -39,7 +47,7 @@ export class FinanceSettingsController {
   @RequirePermissions('bank_account:create')
   @Post('bank-accounts')
   async createBank(@Body() dto: BankAccountDto, @CurrentUser() u: AuthUser, @ReqMeta() m: RequestMeta) {
-    const row = await this.prisma.bankAccount.create({ data: { ...dto, organizationId: dto.organizationId ?? null, isActive: dto.isActive ?? true } });
+    const row = await this.prisma.bankAccount.create({ data: { ...dto, promptPayId: promptPayIdFor(dto), organizationId: dto.organizationId ?? null, isActive: dto.isActive ?? true } });
     await this.audit.log({ actorId: u.id, action: 'bank_account.create', entityType: 'bank_account', entityId: row.id, after: dto, meta: m });
     return row;
   }
@@ -50,7 +58,7 @@ export class FinanceSettingsController {
   async updateBank(@Param('id', ParseUUIDPipe) id: string, @Body() dto: BankAccountDto, @CurrentUser() u: AuthUser, @ReqMeta() m: RequestMeta) {
     const before = await this.prisma.bankAccount.findUnique({ where: { id } });
     if (!before) throw Errors.notFound('บัญชีรับเงิน');
-    const row = await this.prisma.bankAccount.update({ where: { id }, data: { ...dto, organizationId: dto.organizationId ?? null } });
+    const row = await this.prisma.bankAccount.update({ where: { id }, data: { ...dto, promptPayId: promptPayIdFor(dto), organizationId: dto.organizationId ?? null } });
     await this.audit.log({ actorId: u.id, action: 'bank_account.update', entityType: 'bank_account', entityId: id, before, after: dto, meta: m });
     return row;
   }

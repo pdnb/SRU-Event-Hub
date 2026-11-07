@@ -67,7 +67,7 @@ export default function FinanceSettingsPage() {
 
   return (
     <>
-      <PageHeader title="บัญชีรับเงินและรหัสรายได้" description="ข้อมูลที่ใช้พิมพ์บนใบแจ้งชำระและสร้างคิวอาร์พร้อมเพย์ — การแก้ไขไม่มีผลกับใบแจ้งชำระที่ออกไปแล้ว" breadcrumb={[{ title: 'การเงิน / กองคลัง' }, { title: 'บัญชีรับเงิน / รหัสรายได้' }]} />
+      <PageHeader title="บัญชีรับเงินและรหัสรายได้" description="ข้อมูลบัญชีที่พิมพ์บนใบแจ้งชำระให้ผู้ชำระโอนเงิน (ไม่รองรับพร้อมเพย์ — FIN-4) — การแก้ไขไม่มีผลกับใบแจ้งชำระที่ออกไปแล้ว" breadcrumb={[{ title: 'การเงิน / กองคลัง' }, { title: 'บัญชีรับเงิน / รหัสรายได้' }]} />
       <Alert type="warning" showIcon style={{ marginBottom: 16 }} title="ข้อมูลเริ่มต้นเป็นข้อมูลตัวอย่าง" description="กรุณาแทนที่ด้วยบัญชีรับเงินกลางจริงที่ได้รับจากกองคลังก่อนเปิดใช้งาน (docs/OPEN_QUESTIONS.md FIN-4)" />
       <Card title="บัญชีรับเงิน" extra={can('bank_account:create') && <Button icon={<PlusOutlined />} onClick={() => openBank('new')}>เพิ่มบัญชี</Button>}>
         {banks.list.isError ? (
@@ -83,7 +83,6 @@ export default function FinanceSettingsPage() {
               { title: 'ธนาคาร', render: (_, b) => `${b.bankName}${b.branch ? ` ${b.branch}` : ''}` },
               { title: 'เลขที่บัญชี', dataIndex: 'accountNo', width: 150 },
               { title: 'ชื่อบัญชี', dataIndex: 'accountName' },
-              { title: 'พร้อมเพย์', dataIndex: 'promptPayId', width: 150, render: (v: string | null) => v ?? '-' },
               { title: 'หน่วยงาน', width: 140, render: (_, b) => b.organization?.nameTh ?? 'ส่วนกลาง' },
               { title: 'สถานะ', dataIndex: 'isActive', width: 100, render: (v: boolean) => (v ? <Tag color="green">ใช้งาน</Tag> : <Tag>ปิด</Tag>) },
               { title: '', width: 60, render: (_, b) => can('bank_account:update') && <Button type="text" aria-label="แก้ไข" icon={<EditOutlined />} onClick={() => openBank(b)} /> },
@@ -121,7 +120,7 @@ export default function FinanceSettingsPage() {
         onOk={() =>
           bankForm.validateFields().then((v) =>
             banks.save.mutate(
-              { id: bankEdit === 'new' ? undefined : bankEdit?.id, body: { ...v, branch: v.branch || null, promptPayId: v.promptPayId || null } },
+              { id: bankEdit === 'new' ? undefined : bankEdit?.id, body: { ...v, branch: v.branch || null, promptPayId: null } }, // FIN-4: no PromptPay
               { onSuccess: () => setBankEdit(null) },
             ),
           )
@@ -140,9 +139,6 @@ export default function FinanceSettingsPage() {
           </Form.Item>
           <Form.Item name="accountName" label="ชื่อบัญชี" rules={[{ required: true, min: 2 }]}>
             <Input />
-          </Form.Item>
-          <Form.Item name="promptPayId" label="รหัสพร้อมเพย์" help="เลขประจำตัวผู้เสียภาษี 13 หลัก / e-Wallet 15 หลัก / เบอร์โทร 10 หลัก — เว้นว่างหากไม่ใช้คิวอาร์" rules={[{ pattern: /^(\d{10}|\d{13}|\d{15})$/, message: 'รูปแบบไม่ถูกต้อง' }]}>
-            <Input inputMode="numeric" />
           </Form.Item>
           <Form.Item name="organizationId" label="หน่วยงานเจ้าของบัญชี">
             <Select allowClear placeholder="ส่วนกลาง" options={orgs.data?.map((o) => ({ value: o.id, label: o.nameTh }))} />

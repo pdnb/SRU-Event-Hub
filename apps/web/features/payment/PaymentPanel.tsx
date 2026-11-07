@@ -138,7 +138,7 @@ export function PaymentPanel({
           )}
           <div style={{ flex: '1 1 260px', minWidth: 0 }}>
             {bank && (
-              <Descriptions column={1} size="small" title="หรือโอนเข้าบัญชี">
+              <Descriptions column={1} size="small" title={order.promptPayPayload ? 'หรือโอนเข้าบัญชี' : 'โอนเงินเข้าบัญชี'}>
                 <Descriptions.Item label="ธนาคาร">
                   {bank.bankName}
                   {bank.branch ? ` ${bank.branch}` : ''}
