@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { formatThaiDateTime } from '@sru/shared-utils';
+import { formatMoney, formatThaiDateTime } from '@sru/shared-utils';
 import { AccessService } from '../common/access.service';
+import { SettingsService } from '../common/settings.service';
+import { cashRemitDeadline } from '../payments/cash-remit';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
@@ -35,6 +37,7 @@ export class NotificationDispatcher {
     private readonly prisma: PrismaService,
     private readonly notify: NotificationsService,
     private readonly access: AccessService,
+    private readonly settings: SettingsService,
   ) {
     this.handlers = {
       'registration.create': (a) => this.registrationCreated(a),
@@ -109,6 +112,35 @@ export class NotificationDispatcher {
         recipients: [{ userId: r.userId, email: r.email, name: fullName(r) }],
         vars: { ...this.eventVars(r.event), referenceNo: r.referenceNo },
         link: r.userId ? '/my/registrations' : '/registration/status',
+      });
+    }
+    return n + (await this.cashRemitOverdue(now));
+  }
+
+  /**
+   * FIN-7: a closed cashier session whose cash is still not remitted after the deadline (end of the
+   * next business day) → tell the cashier and the finance officers who confirm it, once per session.
+   */
+  async cashRemitOverdue(now = new Date()): Promise<number> {
+    const sessions = await this.prisma.cashierSession.findMany({
+      where: { status: 'CLOSED', closedAt: { not: null } },
+      select: { id: true, sessionNo: true, cashierId: true, closedAt: true, expectedAmount: true, event: { select: { code: true, titleTh: true, organizationId: true } } },
+      orderBy: { closedAt: 'asc' },
+      take: 500,
+    });
+    if (!sessions.length) return 0;
+    const due = await cashRemitDeadline(this.settings);
+    let n = 0;
+    for (const s of sessions) {
+      const dueAt = due(s.closedAt!);
+      if (dueAt.getTime() >= now.getTime()) continue;
+      const officers = await this.usersWithPermission('cashier:approve', s.event.organizationId);
+      n += await this.notify.notify({
+        code: 'CASH_REMIT_OVERDUE',
+        dedupe: `cash-remit-overdue:${s.id}`,
+        recipients: [...new Set([s.cashierId, ...officers])].map((userId) => ({ userId })),
+        vars: { sessionNo: s.sessionNo, eventCode: s.event.code, eventTitle: s.event.titleTh, amount: s.expectedAmount ? formatMoney(s.expectedAmount.toFixed(2)) : '-', dueAt: formatThaiDateTime(dueAt) },
+        link: `/admin/finance/cashier/${s.id}`,
       });
     }
     return n;

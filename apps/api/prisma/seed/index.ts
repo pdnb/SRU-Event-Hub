@@ -128,6 +128,8 @@ async function seedSettings() {
     ['pdpa.consentVersion', '2569-1', 'เวอร์ชันข้อความยินยอม PDPA ปัจจุบัน'],
     ['finance.submissionLeadDays', 7, 'จำนวนวันก่อนวันจัดกิจกรรมที่ต้องส่งรายงานนำส่งกองคลัง (FIN-3: กองคลังยืนยัน 7 วัน)'],
     ['payment.defaultDueHours', 48, 'ระยะเวลาชำระเงินหลังลงทะเบียน (ชั่วโมง)'],
+    ['finance.cashRemitBusinessDays', 1, 'นำส่งเงินสดที่รับหน้างานภายในกี่วันทำการหลังปิดกะ (FIN-7: ภายในวันทำการถัดไป = 1)'],
+    ['finance.holidays', [], 'วันหยุดราชการ/วันหยุดมหาวิทยาลัย (ค.ศ. "YYYY-MM-DD") ที่ไม่นับเป็นวันทำการ — ใช้คำนวณกำหนดนำส่งเงินสด'],
     // P2c — placeholders until กองคลัง confirms the official forms (FIN-1) and bank formats.
     ['finance.remittanceReportTemplate', DEFAULT_BATCH_TEMPLATE, 'แม่แบบรายงานนำส่งเงิน (PDF/Excel) — แบบชั่วคราว รอแบบฟอร์มจริงจากกองคลัง (FIN-1)'],
     ['finance.cashRemittanceTemplate', DEFAULT_CASH_TEMPLATE, 'แม่แบบใบนำส่งเงินสดของกะรับเงินหน้างาน — แบบชั่วคราว (FIN-1)'],

@@ -15,6 +15,7 @@ import { statusLabel, UNIVERSITY_NAME } from './documents/labels';
 import { renderTablePdf } from './documents/pdf';
 import { CASH_TEMPLATE_KEY, CashColumnKey, DEFAULT_CASH_TEMPLATE, DocumentTemplate, isCashTemplate } from './documents/templates';
 import { renderTableXlsx } from './documents/xlsx';
+import { cashRemitDeadline } from './cash-remit';
 import { paymentDueAt } from './fee';
 import { CashierQueryDto, CloseSessionDto, OpenSessionDto, PayablesQueryDto, RemitDto } from './payments.dto';
 import { lockPayer, PaymentsService, settlePayees, unsettlePayees } from './payments.service';
@@ -112,8 +113,8 @@ export class CashierService {
       this.prisma.cashierSession.findMany({ where, include: sessionInclude, orderBy: { openedAt: q.order }, skip: q.skip, take: q.perPage }),
       this.prisma.cashierSession.count({ where }),
     ]);
-    const totals = await this.liveTotals(rows.map((r) => r.id));
-    return Paginated.of(rows.map((r) => this.dto(r, totals.get(r.id))), total, q);
+    const [totals, due] = await Promise.all([this.liveTotals(rows.map((r) => r.id)), cashRemitDeadline(this.settings)]);
+    return Paginated.of(rows.map((r) => this.dto(r, due, totals.get(r.id))), total, q);
   }
 
   async detail(id: string, user: AuthUser) {
@@ -123,9 +124,9 @@ export class CashierService {
       include: { order: { include: { registration: { select: { referenceNo: true } } } } },
       orderBy: { submittedAt: 'asc' },
     });
-    const totals = await this.liveTotals([id]);
+    const [totals, due] = await Promise.all([this.liveTotals([id]), cashRemitDeadline(this.settings)]);
     return {
-      ...this.dto(s, totals.get(id)),
+      ...this.dto(s, due, totals.get(id)),
       payments: payments.map((p) => ({
         ...this.payments.paymentDto(p),
         orderNo: p.order.orderNo,
@@ -474,9 +475,11 @@ export class CashierService {
     return new Map(rows.map((r) => [r.cashierSessionId!, { sum: r._sum?.amount ?? new Prisma.Decimal(0), count: (r._count as { _all: number })._all }]));
   }
 
-  private dto(s: SessionRow, live?: { sum: Prisma.Decimal; count: number }) {
+  private dto(s: SessionRow, due: (closedAt: Date) => Date, live?: { sum: Prisma.Decimal; count: number }) {
     const collected = live?.sum ?? new Prisma.Decimal(0);
     const diff = s.countedAmount && s.expectedAmount ? s.countedAmount.minus(s.expectedAmount) : null;
+    // FIN-7: remittance deadline once the session is closed; overdue only while the cash is not yet remitted.
+    const remitDueAt = s.closedAt ? due(s.closedAt) : null;
     return {
       id: s.id,
       sessionNo: s.sessionNo,
@@ -498,6 +501,10 @@ export class CashierService {
       openedAt: s.openedAt.toISOString(),
       closedAt: s.closedAt?.toISOString() ?? null,
       remittedAt: s.remittedAt?.toISOString() ?? null,
+      remitDueAt: remitDueAt?.toISOString() ?? null,
+      remitOverdue: s.status === 'CLOSED' && !!remitDueAt && remitDueAt.getTime() < Date.now(),
+      /** Remitted after the deadline (kept for the record once REMITTED/CONFIRMED). */
+      remittedLate: !!remitDueAt && !!s.remittedAt && s.remittedAt.getTime() > remitDueAt.getTime(),
       confirmedAt: s.confirmedAt?.toISOString() ?? null,
       confirmedByName: s.confirmedBy?.displayName ?? null,
     };

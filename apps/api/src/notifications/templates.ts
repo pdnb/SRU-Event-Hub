@@ -72,6 +72,10 @@ export const DEFAULT_TEMPLATES: Record<string, TemplateText> = {
     title: 'เกียรติบัตร: {eventTitle}',
     body: 'เกียรติบัตรเลขที่ {certificateNo} พร้อมดาวน์โหลดแล้ว',
   },
+  CASH_REMIT_OVERDUE: {
+    title: 'เกินกำหนดนำส่งเงินสด: กะ {sessionNo}',
+    body: 'เงินสดที่รับหน้างานของ {eventCode} {eventTitle} จำนวน {amount} บาท ยังไม่ได้บันทึกการนำส่ง (กำหนดนำส่งภายใน {dueAt}) กรุณานำส่งกองคลังและบันทึกเลขที่ใบนำส่งเงิน',
+  },
   EVALUATION_OPEN: {
     title: 'แบบประเมิน: {eventTitle}',
     body: 'ขอเชิญตอบ "{formTitle}" {extra}',

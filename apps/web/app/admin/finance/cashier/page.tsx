@@ -3,7 +3,7 @@
 import { PlusOutlined } from '@ant-design/icons';
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
 import type { EventSummaryDto } from '@sru/shared-types';
-import { Button, Card, Form, Input, Modal, Select, Table, Tabs, Typography } from 'antd';
+import { Button, Card, Form, Input, Modal, Select, Table, Tabs, Tag, Typography } from 'antd';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -87,7 +87,20 @@ export default function CashierSessionsPage() {
               { title: 'รายการ', dataIndex: 'paymentCount', align: 'right', width: 80 },
               { title: 'ยอดรับ', dataIndex: 'collectedAmount', align: 'right', width: 130, render: (v: string) => <Money value={v} /> },
               { title: 'ส่วนต่าง', dataIndex: 'difference', align: 'right', width: 120, render: (v: string | null) => (v && v !== '0.00' ? <Typography.Text type="danger"><Money value={v} /></Typography.Text> : '-') },
-              { title: 'สถานะ', dataIndex: 'status', width: 140, render: (v: string) => <StatusTag status={v} kind="cashier" /> },
+              {
+                title: 'สถานะ',
+                dataIndex: 'status',
+                width: 170,
+                render: (v: string, r) => (
+                  <>
+                    <StatusTag status={v} kind="cashier" />
+                    {r.remitOverdue && <Tag color="red">เกินกำหนดนำส่ง</Tag>}
+                    {v === 'CLOSED' && !r.remitOverdue && r.remitDueAt && (
+                      <div><Typography.Text type="secondary" style={{ fontSize: 12 }}>นำส่งภายใน <ThaiDate value={r.remitDueAt} /></Typography.Text></div>
+                    )}
+                  </>
+                ),
+              },
               { title: 'เปิดกะ', dataIndex: 'openedAt', width: 160, render: (v: string) => <ThaiDate value={v} time /> },
             ]}
           />

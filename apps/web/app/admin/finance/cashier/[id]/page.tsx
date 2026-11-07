@@ -217,7 +217,12 @@ export default function CashierSessionPage({ params }: { params: Promise<{ id: s
             <Descriptions.Item label="นับได้"><Money value={s.countedAmount} /></Descriptions.Item>
             <Descriptions.Item label="ส่วนต่าง">{s.difference && s.difference !== '0.00' ? <Typography.Text type="danger"><Money value={s.difference} /></Typography.Text> : 'ตรงยอด'}</Descriptions.Item>
             <Descriptions.Item label="หมายเหตุ">{s.closeNote ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="เลขที่ใบนำส่งเงิน">{s.remittanceNo ?? '-'}</Descriptions.Item>
+            <Descriptions.Item label="กำหนดนำส่งเงินสด">
+              {s.remitDueAt ? <ThaiDate value={s.remitDueAt} time /> : '-'}
+              {s.remitOverdue && <Tag color="red" style={{ marginLeft: 8 }}>เกินกำหนด</Tag>}
+              {s.remittedLate && <Tag color="orange" style={{ marginLeft: 8 }}>นำส่งหลังกำหนด</Tag>}
+            </Descriptions.Item>
+            <Descriptions.Item label="เลขที่ใบนำส่งเงิน">{s.remittanceNo ? <>{s.remittanceNo} · <ThaiDate value={s.remittedAt} time /></> : '-'}</Descriptions.Item>
             <Descriptions.Item label="ยืนยันยอดโดย">{s.confirmedByName ? <>{s.confirmedByName} · <ThaiDate value={s.confirmedAt} time /></> : '-'}</Descriptions.Item>
           </Descriptions>
         </Card>

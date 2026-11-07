@@ -21,6 +21,11 @@ export interface CashierSessionDto {
   openedAt: string;
   closedAt: string | null;
   remittedAt: string | null;
+  /** FIN-7: end of the next business day after closing. */
+  remitDueAt: string | null;
+  /** Closed, not yet remitted, and past remitDueAt. */
+  remitOverdue: boolean;
+  remittedLate: boolean;
   confirmedAt: string | null;
   confirmedByName: string | null;
 }

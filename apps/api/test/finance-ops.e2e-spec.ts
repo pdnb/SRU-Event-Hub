@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { createApp } from '../src/main';
+import { NotificationDispatcher } from '../src/notifications/notification-dispatcher';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { iso, login, PASSWORD, type Session } from './helpers';
 
@@ -116,6 +117,23 @@ describe('on-site cashier session', () => {
     await expect(prisma.$executeRaw`UPDATE cashier_sessions SET counted_amount = 800 WHERE id = ${sessionId}::uuid`).rejects.toThrow(/immutable/);
     // closed session: no more collecting or voiding
     expect((await cashier.post(`/api/v1/finance/cashier-sessions/${sessionId}/collect`, { orderId: orders.c!.orderId }, { 'Idempotency-Key': randomUUID() })).status).toBe(409);
+  });
+
+  it('FIN-7: a closed session must be remitted by the next business day, else a one-time overdue notice', async () => {
+    const d = (await cashier.get(`/api/v1/finance/cashier-sessions/${sessionId}`)).body.data;
+    expect(d.remitDueAt).toBeTruthy();
+    expect(new Date(d.remitDueAt).getTime()).toBeGreaterThan(new Date(d.closedAt).getTime() + 24 * 3600_000 - 60_000);
+    expect(d.remitOverdue).toBe(false);
+
+    const dispatcher = app.get(NotificationDispatcher);
+    const later = new Date(Date.now() + 10 * 86_400_000);
+    expect(await dispatcher.cashRemitOverdue(later)).toBeGreaterThan(0);
+    const key = { dedupeKey: { startsWith: `cash-remit-overdue:${sessionId}:` } };
+    const rows = await prisma.notification.findMany({ where: key, select: { userId: true, type: true } });
+    expect(rows.length).toBeGreaterThanOrEqual(2); // cashier + org finance officer
+    expect(rows.every((r) => r.type === 'CASH_REMIT_OVERDUE')).toBe(true);
+    await dispatcher.cashRemitOverdue(later);
+    expect(await prisma.notification.count({ where: key })).toBe(rows.length); // never twice
   });
 
   it('cash is batchable only after the remitted session is confirmed by someone else', async () => {

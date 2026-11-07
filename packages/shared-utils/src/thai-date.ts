@@ -60,3 +60,34 @@ export function formatThaiDateTime(date: Date | string): string {
 
 /** Collator for Thai dictionary ordering (name sorting for badges / reports). */
 export const thaiCollator = new Intl.Collator('th', { sensitivity: 'base' });
+
+/** Bangkok calendar date of an instant, as "YYYY-MM-DD". */
+export function bangkokDateKey(date: Date): string {
+  const { year, month, day } = bangkokParts(date);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/**
+ * End (23:59:59.999 Bangkok) of the `n`-th business day after the Bangkok date of `from`.
+ * Business days are Mon–Fri minus `holidays` ("YYYY-MM-DD", CE, Bangkok dates).
+ * FIN-7: cash collected on site is remitted by the end of the next business day (n = 1).
+ */
+export function businessDayDeadline(from: Date, n: number, holidays: readonly string[] = []): Date {
+  if (!Number.isInteger(n) || n < 0) throw new Error('Invalid business day count');
+  const off = new Set(holidays);
+  const { year, month, day } = bangkokParts(from);
+  // Walk calendar dates as UTC midnights (no DST in Bangkok, so date arithmetic is exact).
+  const cur = new Date(Date.UTC(year, month - 1, day));
+  const key = () => cur.toISOString().slice(0, 10);
+  const isBusiness = () => cur.getUTCDay() !== 0 && cur.getUTCDay() !== 6 && !off.has(key());
+  let left = n;
+  if (n === 0) {
+    while (!isBusiness()) cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  while (left > 0) {
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    if (isBusiness()) left--;
+  }
+  // 23:59:59.999 Bangkok (UTC+7) = 16:59:59.999 UTC the same date.
+  return new Date(cur.getTime() + 17 * 3600_000 - 1);
+}
