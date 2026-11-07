@@ -138,15 +138,17 @@ describe('receipt void', () => {
     await centralFinance.post(`/api/v1/finance/batches/${batchId}/receive`);
     const detail = await centralFinance.get(`/api/v1/finance/batches/${batchId}`);
     const paymentId = detail.body.data.items[0].paymentId;
-    const no = `V${Date.now()}`;
-    await centralFinance.post(`/api/v1/finance/batches/${batchId}/receipts`, { receipts: [{ paymentId, bookNo: 'E2E', receiptNo: no, issuedAt: new Date().toISOString() }] });
+    const no = String(Date.now()).slice(-9); // FIN-2: running number only, fiscal year from issuedAt
+    await centralFinance.post(`/api/v1/finance/batches/${batchId}/receipts`, { receipts: [{ paymentId, receiptNo: no, issuedAt: new Date().toISOString() }] });
     const issued = await centralFinance.get(`/api/v1/finance/batches/${batchId}`);
     expect(issued.body.data.status).toBe('RECEIPTS_ISSUED');
 
     const v = await centralFinance.post(`/api/v1/finance/batches/receipts/${issued.body.data.items[0].receipt.id}/void`, { reason: 'พิมพ์เลขผิด' });
     expect(v.status).toBe(200);
     expect((await centralFinance.get(`/api/v1/finance/batches/${batchId}`)).body.data.status).toBe('RECEIVED');
-    const re = await centralFinance.post(`/api/v1/finance/batches/${batchId}/receipts`, { receipts: [{ paymentId, bookNo: 'E2E', receiptNo: `${no}A`, issuedAt: new Date().toISOString() }] });
+    const reused = await centralFinance.post(`/api/v1/finance/batches/${batchId}/receipts`, { receipts: [{ paymentId, receiptNo: no, issuedAt: new Date().toISOString() }] });
+    expect(reused.status).toBe(409); // a voided number is never reused
+    const re = await centralFinance.post(`/api/v1/finance/batches/${batchId}/receipts`, { receipts: [{ paymentId, receiptNo: String(Number(no) + 1), issuedAt: new Date().toISOString() }] });
     expect(re.body.data.complete).toBe(true);
   });
 });

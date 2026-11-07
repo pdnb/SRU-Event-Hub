@@ -71,7 +71,7 @@ export const DEFAULT_BATCH_TEMPLATE: DocumentTemplate<BatchColumnKey> = {
     { key: 'channel', label: 'ช่องทาง', width: 9, align: 'center' },
     { key: 'transferredAt', label: 'วันที่ชำระ', width: 15 },
     { key: 'amount', label: 'จำนวนเงิน (บาท)', width: 12, align: 'right' },
-    { key: 'receipt', label: 'เล่มที่/เลขที่ใบเสร็จ', width: 14 },
+    { key: 'receipt', label: 'เลขที่ใบเสร็จ', width: 14 },
   ],
   totalLabel: 'รวมทั้งสิ้น',
   footerNotes: ['({totalText})', 'จำนวน {itemCount} รายการ'],
