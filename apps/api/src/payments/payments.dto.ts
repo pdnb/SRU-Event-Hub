@@ -64,8 +64,8 @@ export class EligibleQueryDto {
 
 export class ReceiptInputDto {
   @IsUUID() paymentId!: string;
-  @IsString() @Matches(/^[\w\-/.]{1,20}$/, { message: 'เล่มที่ไม่ถูกต้อง' }) bookNo!: string;
-  @IsString() @Matches(/^[\w\-/.]{1,30}$/, { message: 'เลขที่ไม่ถูกต้อง' }) receiptNo!: string;
+  /** Running number only (FIN-2: 2569/0001 → "1" or "0001"); the fiscal year comes from issuedAt. */
+  @IsString() @Matches(/^0*[1-9]\d{0,9}$/, { message: 'เลขที่ใบเสร็จต้องเป็นตัวเลข เช่น 0001' }) receiptNo!: string;
   @IsDateString() issuedAt!: string;
 }
 

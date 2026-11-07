@@ -282,13 +282,17 @@ describe('finance batch → กองคลัง', () => {
     const detail = await centralFinance.get(`/api/v1/finance/batches/${batchId}`);
     expect(detail.body.data).toMatchObject({ status: 'RECEIVED', totalAmount: '800.00', totalAmountText: 'แปดร้อยบาทถ้วน', itemCount: 1 });
     const paymentId = detail.body.data.items[0].paymentId;
-    const receiptNo = `E2E${Date.now()}`;
-    const rec = await centralFinance.post(`/api/v1/finance/batches/${batchId}/receipts`, { receipts: [{ paymentId, bookNo: 'E2E', receiptNo, issuedAt: new Date().toISOString() }] });
+    const receiptNo = String(Date.now() + 500).slice(-9);
+    const bad = await centralFinance.post(`/api/v1/finance/batches/${batchId}/receipts`, { receipts: [{ paymentId, receiptNo: '2569/0001', issuedAt: new Date().toISOString() }] });
+    expect(bad.status).toBe(422); // FIN-2: only the running number is entered
+    const rec = await centralFinance.post(`/api/v1/finance/batches/${batchId}/receipts`, { receipts: [{ paymentId, receiptNo, issuedAt: new Date().toISOString() }] });
     expect(rec.status).toBe(200);
     expect(rec.body.data.complete).toBe(true);
-    const again = await centralFinance.post(`/api/v1/finance/batches/${batchId}/receipts`, { receipts: [{ paymentId, bookNo: 'E2E', receiptNo, issuedAt: new Date().toISOString() }] });
+    const again = await centralFinance.post(`/api/v1/finance/batches/${batchId}/receipts`, { receipts: [{ paymentId, receiptNo, issuedAt: new Date().toISOString() }] });
     expect(again.status).toBe(409);
-    expect((await centralFinance.get(`/api/v1/finance/batches/${batchId}`)).body.data.status).toBe('RECEIPTS_ISSUED');
+    const issued = (await centralFinance.get(`/api/v1/finance/batches/${batchId}`)).body.data;
+    expect(issued.status).toBe('RECEIPTS_ISSUED');
+    expect(issued.items[0].receipt.receiptNo).toMatch(/^25\d\d\/\d{4,10}$/); // "2569/0001"
   });
 
   it('exports the remittance report as xlsx', async () => {

@@ -1,7 +1,7 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { BankAccountSnapshot, FinancePaymentRowDto, PaymentDto, PaymentOrderDto } from '@sru/shared-types';
-import { bahtText, promptPayPayload } from '@sru/shared-utils';
+import { bahtText, formatReceiptNo, promptPayPayload } from '@sru/shared-utils';
 import { createHash } from 'node:crypto';
 import type { AuthUser } from '../auth/auth.types';
 import { AccessService } from '../common/access.service';
@@ -527,7 +527,7 @@ export class PaymentsService {
       eventTitle: p.order.event.titleTh,
       verifiedByName: p.verifiedBy?.displayName ?? null,
       batchNo: p.batchItems[0]?.batch.batchNo ?? null,
-      receiptNo: p.receipts[0] ? `${p.receipts[0].bookNo}/${p.receipts[0].receiptNo}` : null,
+      receiptNo: p.receipts[0] ? formatReceiptNo(p.receipts[0].fiscalYear, p.receipts[0].receiptNo) : null,
       statementMatchedAt: p.statementLines[0]?.txnAt.toISOString() ?? null,
       billing: billingDto(p.order),
     }));

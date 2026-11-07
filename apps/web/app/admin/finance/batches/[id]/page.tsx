@@ -3,6 +3,7 @@
 import { DownloadOutlined, FileDoneOutlined, FilePdfOutlined, InboxOutlined, RollbackOutlined, SendOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { FinanceBatchDto } from '@sru/shared-types';
+import { fiscalYearBE, formatReceiptNo, normalizeReceiptNo } from '@sru/shared-utils';
 import { Alert, Button, Card, DatePicker, Descriptions, Form, Input, Modal, Popconfirm, Skeleton, Space, Table, Typography } from 'antd';
 import type { Dayjs } from 'dayjs';
 import { use, useState } from 'react';
@@ -28,12 +29,16 @@ interface Item {
   transferredAt: string | null;
   verifiedAt: string | null;
   verifiedByName: string | null;
-  receipt: { id: string; bookNo: string; receiptNo: string; issuedAt: string } | null;
+  /** receiptNo is already formatted "<ปีงบ>/<เลขที่>" e.g. 2569/0001 (FIN-2). */
+  receipt: { id: string; receiptNo: string; issuedAt: string } | null;
 }
 type Detail = FinanceBatchDto & { items: Item[] };
 
 /** "000123" + 2 → "000125" (keeps zero padding). Non-numeric numbers are left for manual entry. */
-const bump = (start: string, n: number) => (/^\d+$/.test(start) ? String(Number(start) + n).padStart(start.length, '0') : n === 0 ? start : '');
+const bump = (start: string, n: number) => {
+  const s = normalizeReceiptNo(start);
+  return s ? normalizeReceiptNo(String(Number(s) + n)) ?? '' : '';
+};
 
 export default function FinanceBatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -43,7 +48,6 @@ export default function FinanceBatchDetailPage({ params }: { params: Promise<{ i
   const [returning, setReturning] = useState(false);
   const [reason, setReason] = useState('');
   const [recording, setRecording] = useState(false);
-  const [book, setBook] = useState('');
   const [startNo, setStartNo] = useState('');
   const [issuedAt, setIssuedAt] = useState<Dayjs | null>(dayjs());
 
@@ -79,7 +83,8 @@ export default function FinanceBatchDetailPage({ params }: { params: Promise<{ i
   });
 
   const pending = q.data?.items.filter((i) => i.isActive && !i.receipt) ?? [];
-  const receipts = pending.map((i, n) => ({ paymentId: i.paymentId, bookNo: book.trim(), receiptNo: bump(startNo.trim(), n), issuedAt: issuedAt?.toISOString() ?? '' }));
+  const receiptFy = issuedAt ? fiscalYearBE(issuedAt.toDate()) : null;
+  const receipts = pending.map((i, n) => ({ paymentId: i.paymentId, receiptNo: bump(startNo, n), issuedAt: issuedAt?.toISOString() ?? '' }));
   const record = useMutation({
     mutationFn: () => api.post<{ recorded: number; complete: boolean }>(`/finance/batches/${id}/receipts`, { receipts }),
     onSuccess: (r) => {
@@ -198,12 +203,12 @@ export default function FinanceBatchDetailPage({ params }: { params: Promise<{ i
             { title: 'ตรวจสอบโดย', render: (_, r) => <>{r.verifiedByName}<div><Typography.Text type="secondary" style={{ fontSize: 12 }}><ThaiDate value={r.verifiedAt} time /></Typography.Text></div></> },
             { title: 'จำนวนเงิน', dataIndex: 'amount', align: 'right', width: 130, render: (v: string) => <Money value={v} /> },
             {
-              title: 'เล่มที่/เลขที่ใบเสร็จ',
+              title: 'เลขที่ใบเสร็จ',
               width: 210,
               render: (_, r) =>
                 r.receipt ? (
                   <Space size={4}>
-                    {`${r.receipt.bookNo}/${r.receipt.receiptNo}`}
+                    {r.receipt.receiptNo}
                     {can('receipt:void') && ['RECEIVED', 'RECEIPTS_ISSUED'].includes(b.status) && (
                       <Button size="small" type="link" danger onClick={() => setVoidingReceipt(r)}>ยกเลิก</Button>
                     )}
@@ -219,7 +224,7 @@ export default function FinanceBatchDetailPage({ params }: { params: Promise<{ i
 
       <Modal
         open={!!voidingReceipt}
-        title={`ยกเลิกเลขที่ใบเสร็จ ${voidingReceipt?.receipt ? `${voidingReceipt.receipt.bookNo}/${voidingReceipt.receipt.receiptNo}` : ''}`}
+        title={`ยกเลิกเลขที่ใบเสร็จ ${voidingReceipt?.receipt?.receiptNo ?? ''}`}
         okText="ยกเลิกใบเสร็จ"
         cancelText="ปิด"
         okButtonProps={{ danger: true, disabled: voidReason.trim().length < 3, loading: voidReceipt.isPending }}
@@ -242,16 +247,18 @@ export default function FinanceBatchDetailPage({ params }: { params: Promise<{ i
         width={720}
         onCancel={() => setRecording(false)}
         onOk={() => record.mutate()}
-        okButtonProps={{ disabled: !book.trim() || !startNo.trim() || !issuedAt || receipts.some((r) => !r.receiptNo), loading: record.isPending }}
+        okButtonProps={{ disabled:!issuedAt || receipts.some((r) => !r.receiptNo), loading: record.isPending }}
         destroyOnHidden
       >
         <Form layout="vertical">
           <Space wrap align="start">
-            <Form.Item label="เล่มที่" required>
-              <Input value={book} onChange={(e) => setBook(e.target.value)} style={{ width: 120 }} maxLength={20} />
-            </Form.Item>
-            <Form.Item label="เลขที่เริ่มต้น" required help="รายการถัดไปจะเรียงเลขต่อกันอัตโนมัติ">
-              <Input value={startNo} onChange={(e) => setStartNo(e.target.value)} style={{ width: 160 }} maxLength={30} />
+            <Form.Item
+              label="เลขที่เริ่มต้น"
+              required
+              validateStatus={startNo && !normalizeReceiptNo(startNo) ? 'error' : undefined}
+              help={startNo && !normalizeReceiptNo(startNo) ? 'กรอกเฉพาะตัวเลข เช่น 1 หรือ 0001' : 'ปีงบประมาณมาจากวันที่ออกใบเสร็จ รายการถัดไปเรียงเลขต่อกันอัตโนมัติ'}
+            >
+              <Input value={startNo} onChange={(e) => setStartNo(e.target.value)} style={{ width: 200 }} maxLength={10} addonBefore={receiptFy ? `${receiptFy}/` : undefined} placeholder="0001" inputMode="numeric" />
             </Form.Item>
             <Form.Item label="วันที่ออกใบเสร็จ" required>
               <DatePicker value={issuedAt} onChange={setIssuedAt} format={DATE_FMT} />
@@ -267,7 +274,7 @@ export default function FinanceBatchDetailPage({ params }: { params: Promise<{ i
             { title: 'เลขที่รายการ', dataIndex: 'paymentNo' },
             { title: 'ผู้ชำระ', dataIndex: 'payerName' },
             { title: 'จำนวนเงิน', dataIndex: 'amount', align: 'right', render: (v: string) => <Money value={v} /> },
-            { title: 'เล่ม/เลขที่', render: (_, r) => (book && r.no ? `${book}/${r.no}` : '-') },
+            { title: 'เลขที่ใบเสร็จ', render: (_, r) => (receiptFy && r.no ? formatReceiptNo(receiptFy, r.no) : '-') },
           ]}
         />
       </Modal>

@@ -1,6 +1,6 @@
 import { HttpStatus, Injectable, StreamableFile } from '@nestjs/common';
 import type { FinanceBatchDto } from '@sru/shared-types';
-import { bahtText, fiscalYearBE, formatMoney, formatThaiDate, formatThaiDateTime } from '@sru/shared-utils';
+import { bahtText, fiscalYearBE, formatMoney, formatReceiptNo, formatThaiDate, formatThaiDateTime, normalizeReceiptNo } from '@sru/shared-utils';
 import type { AuthUser } from '../auth/auth.types';
 import { AccessService } from '../common/access.service';
 import { AuditService } from '../common/audit.service';
@@ -168,7 +168,7 @@ export class FinanceBatchesService {
         verifiedAt: i.payment.verifiedAt?.toISOString() ?? null,
         verifiedByName: i.payment.verifiedBy?.displayName ?? null,
         receipt: i.payment.receipts[0]
-          ? { id: i.payment.receipts[0].id, bookNo: i.payment.receipts[0].bookNo, receiptNo: i.payment.receipts[0].receiptNo, issuedAt: i.payment.receipts[0].issuedAt.toISOString().slice(0, 10) }
+          ? { id: i.payment.receipts[0].id, receiptNo: formatReceiptNo(i.payment.receipts[0].fiscalYear, i.payment.receipts[0].receiptNo), issuedAt: i.payment.receipts[0].issuedAt.toISOString().slice(0, 10) }
           : null,
         channel: i.payment.channel,
         billing: billingDto(i.payment.order),
@@ -202,7 +202,7 @@ export class FinanceBatchesService {
     });
   }
 
-  /** Records official receipt numbers issued by กองคลัง (unique per fiscal year + book + number). */
+  /** Records official receipt numbers issued by กองคลัง: "<ปีงบ>/<เลขที่>" unique per fiscal year (FIN-2). */
   async recordReceipts(id: string, dto: RecordReceiptsDto, user: AuthUser, meta: RequestMeta) {
     const b = await this.load(id, user, 'receipt:create');
     if (b.status !== 'RECEIVED') throw Errors.invalidState('บันทึกเลขที่ใบเสร็จได้เมื่อกองคลังรับชุดนำส่งแล้วเท่านั้น');
@@ -226,8 +226,7 @@ export class FinanceBatchesService {
               paymentId: r.paymentId,
               batchId: b.id,
               fiscalYear: fiscalYearBE(issuedAt),
-              bookNo: r.bookNo.trim(),
-              receiptNo: r.receiptNo.trim(),
+              receiptNo: normalizeReceiptNo(r.receiptNo)!,
               issuedAt,
               amount: item.amount,
               recordedById: user.id,
@@ -240,14 +239,14 @@ export class FinanceBatchesService {
           await tx.financeBatch.update({ where: { id: b.id }, data: { status: 'RECEIPTS_ISSUED', version: { increment: 1 } } });
         }
         await this.audit.log(
-          { actorId: user.id, action: 'receipt.record', entityType: 'finance_batch', entityId: b.id, after: { receipts: dto.receipts.map((r) => `${r.bookNo}/${r.receiptNo}`), complete }, meta },
+          { actorId: user.id, action: 'receipt.record', entityType: 'finance_batch', entityId: b.id, after: { receipts: dto.receipts.map((r) => formatReceiptNo(fiscalYearBE(new Date(r.issuedAt)), normalizeReceiptNo(r.receiptNo)!)), complete }, meta },
           tx,
         );
         return { recorded: dto.receipts.length, complete };
       });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        throw new AppError('RECEIPT_NO_TAKEN', 'เลขที่ใบเสร็จนี้ (ปีงบประมาณ/เล่มที่/เลขที่) ถูกใช้แล้ว', HttpStatus.CONFLICT);
+        throw new AppError('RECEIPT_NO_TAKEN', 'เลขที่ใบเสร็จนี้ (ปีงบประมาณ/เลขที่) ถูกใช้แล้ว', HttpStatus.CONFLICT);
       }
       throw e;
     }
@@ -298,7 +297,7 @@ export class FinanceBatchesService {
       verifiedAt: i.verifiedAt ? formatThaiDateTime(i.verifiedAt) : '',
       incomeCode: event.incomeCode?.code ?? '',
       amount: formatMoney(i.amount ?? '0'),
-      receipt: i.receipt ? `${i.receipt.bookNo}/${i.receipt.receiptNo}` : '',
+      receipt: i.receipt?.receiptNo ?? '',
     });
 
     const body =
@@ -344,7 +343,7 @@ export class FinanceBatchesService {
       if (r.batchId) {
         await tx.financeBatch.updateMany({ where: { id: r.batchId, status: 'RECEIPTS_ISSUED' }, data: { status: 'RECEIVED', version: { increment: 1 } } });
       }
-      await this.audit.log({ actorId: user.id, action: 'receipt.void', entityType: 'receipt', entityId: receiptId, before: { receipt: `${r.bookNo}/${r.receiptNo}` }, after: { status: 'VOIDED' }, reason, meta }, tx);
+      await this.audit.log({ actorId: user.id, action: 'receipt.void', entityType: 'receipt', entityId: receiptId, before: { receipt: formatReceiptNo(r.fiscalYear, r.receiptNo) }, after: { status: 'VOIDED' }, reason, meta }, tx);
       return { id: receiptId, status: 'VOIDED' };
     });
   }
