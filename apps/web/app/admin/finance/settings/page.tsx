@@ -68,7 +68,7 @@ export default function FinanceSettingsPage() {
   return (
     <>
       <PageHeader title="บัญชีรับเงินและรหัสรายได้" description="ข้อมูลที่ใช้พิมพ์บนใบแจ้งชำระและสร้างคิวอาร์พร้อมเพย์ — การแก้ไขไม่มีผลกับใบแจ้งชำระที่ออกไปแล้ว" breadcrumb={[{ title: 'การเงิน / กองคลัง' }, { title: 'บัญชีรับเงิน / รหัสรายได้' }]} />
-      <Alert type="warning" showIcon style={{ marginBottom: 16 }} title="ข้อมูลเริ่มต้นเป็นข้อมูลตัวอย่าง" description="กรุณาแทนที่ด้วยบัญชีรับเงินและรหัสรายได้จริงที่ได้รับจากกองคลังก่อนเปิดใช้งาน (docs/OPEN_QUESTIONS.md FIN-4, FIN-5)" />
+      <Alert type="warning" showIcon style={{ marginBottom: 16 }} title="ข้อมูลเริ่มต้นเป็นข้อมูลตัวอย่าง" description="กรุณาแทนที่ด้วยบัญชีรับเงินกลางจริงที่ได้รับจากกองคลังก่อนเปิดใช้งาน (docs/OPEN_QUESTIONS.md FIN-4)" />
       <Card title="บัญชีรับเงิน" extra={can('bank_account:create') && <Button icon={<PlusOutlined />} onClick={() => openBank('new')}>เพิ่มบัญชี</Button>}>
         {banks.list.isError ? (
           <ErrorState error={banks.list.error} onRetry={() => banks.list.refetch()} />
@@ -92,7 +92,7 @@ export default function FinanceSettingsPage() {
         )}
       </Card>
 
-      <Card title="รหัสรายได้" style={{ marginTop: 16 }} extra={can('income_code:create') && <Button icon={<PlusOutlined />} onClick={() => openCode('new')}>เพิ่มรหัส</Button>}>
+      <Card title="รหัสรายได้ (ไม่บังคับ — กองคลังไม่ใช้รหัสรายได้ เพิ่มเมื่อจำเป็นเท่านั้น)" style={{ marginTop: 16 }} extra={can('income_code:create') && <Button icon={<PlusOutlined />} onClick={() => openCode('new')}>เพิ่มรหัส</Button>}>
         {codes.list.isError ? (
           <ErrorState error={codes.list.error} onRetry={() => codes.list.refetch()} />
         ) : (

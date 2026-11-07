@@ -149,7 +149,7 @@ async function seedWorkflow(orgIds: Map<string, string>) {
   });
   const steps = [
     { stepOrder: 1, nameTh: 'หัวหน้าหน่วยงานผู้จัดพิจารณา', approverType: 'ORG_HEAD' as const },
-    { stepOrder: 2, nameTh: 'กองคลังตรวจสอบอัตราค่าลงทะเบียน บัญชีรับเงิน และรหัสรายได้', approverType: 'ROLE' as const, approverRoleId: financeRole.id, isFinanceReview: true, paidEventsOnly: true },
+    { stepOrder: 2, nameTh: 'กองคลังตรวจสอบอัตราค่าลงทะเบียนและบัญชีรับเงิน', approverType: 'ROLE' as const, approverRoleId: financeRole.id, isFinanceReview: true, paidEventsOnly: true },
     { stepOrder: 3, nameTh: 'ผู้อนุมัติส่วนกลางพิจารณา', approverType: 'ROLE' as const, approverRoleId: approverRole.id },
   ];
   for (const s of steps) {

@@ -94,7 +94,6 @@ describe('paid event setup', () => {
       capacity: 4,
       allowGuestRegistration: true,
       bankAccountId: options.body.data.bankAccounts[0].id,
-      incomeCodeId: options.body.data.incomeCodes[0].id,
       paymentWindowHours: 48,
       feeRates: [
         { nameTh: 'อัตราทั่วไป', amount: '800.00' },

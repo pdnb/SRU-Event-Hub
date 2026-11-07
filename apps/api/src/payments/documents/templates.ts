@@ -59,7 +59,7 @@ export const DEFAULT_BATCH_TEMPLATE: DocumentTemplate<BatchColumnKey> = {
   infoLines: [
     'เลขที่ชุดนำส่ง: {batchNo}    สถานะ: {statusLabel}    ปีงบประมาณ: {fiscalYear}',
     'กิจกรรม: {eventCode} {eventTitle}    วันที่จัด: {eventDate}',
-    'บัญชีรับเงิน: {bankAccount}    รหัสรายได้: {incomeCode}',
+    'บัญชีรับเงิน: {bankAccount}', // FIN-5: no income codes ({incomeCode} still available to custom templates)
     'จัดทำโดย: {createdBy}    วันที่จัดทำ: {createdAt}',
   ],
   columns: [

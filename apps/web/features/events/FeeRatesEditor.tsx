@@ -125,21 +125,24 @@ export function FeeRatesEditor({
                 )}
               </RhfField>
             </Col>
-            <Col xs={24} md={8}>
-              <RhfField control={control} name="incomeCodeId" label="รหัสรายได้">
-                {(f) => (
-                  <Select
-                    id={f.id}
-                    allowClear
-                    value={(f.value as string | null) ?? undefined}
-                    onChange={(v) => f.onChange(v ?? null)}
-                    placeholder="เลือกรหัสรายได้"
-                    options={options.data?.incomeCodes.map((c) => ({ value: c.id, label: c.label }))}
-                    disabled={disabled}
-                  />
-                )}
-              </RhfField>
-            </Col>
+            {/* FIN-5: กองคลังไม่ใช้รหัสรายได้ — shown only if codes are ever added in finance settings. */}
+            {!!options.data?.incomeCodes.length && (
+              <Col xs={24} md={8}>
+                <RhfField control={control} name="incomeCodeId" label="รหัสรายได้">
+                  {(f) => (
+                    <Select
+                      id={f.id}
+                      allowClear
+                      value={(f.value as string | null) ?? undefined}
+                      onChange={(v) => f.onChange(v ?? null)}
+                      placeholder="เลือกรหัสรายได้"
+                      options={options.data?.incomeCodes.map((c) => ({ value: c.id, label: c.label }))}
+                      disabled={disabled}
+                    />
+                  )}
+                </RhfField>
+              </Col>
+            )}
             <Col xs={24} md={4}>
               <RhfField control={control} name="paymentWindowHours" label="ชำระภายใน (ชม.)" help="นับจากลงทะเบียน">
                 {(f) => <InputNumber id={f.id} min={1} max={720} style={{ width: '100%' }} value={f.value as number} onChange={(v) => f.onChange(v ?? 72)} disabled={disabled} />}

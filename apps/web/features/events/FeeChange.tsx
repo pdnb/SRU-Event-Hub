@@ -49,7 +49,8 @@ function RatesTable({ side }: { side: FeeSide }) {
         ]}
       />
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        บัญชีรับเงิน: {side.bankAccount ?? '-'} · รหัสรายได้: {side.incomeCode ?? '-'}
+        บัญชีรับเงิน: {side.bankAccount ?? '-'}
+        {side.incomeCode ? ` · รหัสรายได้: ${side.incomeCode}` : ''}
       </Typography.Text>
     </>
   );
@@ -177,11 +178,13 @@ export function FeeChangeDialog({ event, open, onClose, onDone }: { event: Admin
               <Select allowClear loading={options.isPending} options={options.data?.bankAccounts.map((b) => ({ value: b.id, label: b.label }))} />
             </Form.Item>
           </Col>
-          <Col xs={24} md={12}>
-            <Form.Item name="incomeCodeId" label="รหัสรายได้">
-              <Select allowClear loading={options.isPending} options={options.data?.incomeCodes.map((c) => ({ value: c.id, label: c.label }))} />
-            </Form.Item>
-          </Col>
+          {!!options.data?.incomeCodes.length && (
+            <Col xs={24} md={12}>
+              <Form.Item name="incomeCodeId" label="รหัสรายได้">
+                <Select allowClear options={options.data.incomeCodes.map((c) => ({ value: c.id, label: c.label }))} />
+              </Form.Item>
+            </Col>
+          )}
         </Row>
         <Form.Item name="reason" label="เหตุผลที่ขอแก้ไข" rules={[{ required: true, min: 3, message: 'กรุณาระบุเหตุผล' }]}>
           <Input.TextArea rows={3} maxLength={1000} showCount />
