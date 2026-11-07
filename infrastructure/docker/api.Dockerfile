@@ -21,9 +21,10 @@ RUN pnpm --filter "@sru/api^..." build && pnpm --filter @sru/api build
 RUN pnpm --filter @sru/api deploy --prod --legacy /out && cp -r apps/api/dist /out/ && cp -r apps/api/assets /out/
 
 # Release step: `docker compose run --rm migrate` applies pending migrations (needs the Prisma CLI).
+# SEED_ON_DEPLOY=true also loads reference data (idempotent; SEED_DEMO=false in production).
 FROM build AS migrate
 WORKDIR /repo/apps/api
-CMD ["npx", "prisma", "migrate", "deploy"]
+CMD ["sh", "-c", "npx prisma migrate deploy && if [ \"$SEED_ON_DEPLOY\" = true ]; then npx prisma db seed; fi"]
 
 FROM node:22.12-bookworm-slim AS runtime
 ENV NODE_ENV=production

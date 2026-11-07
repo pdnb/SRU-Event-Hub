@@ -1,0 +1,157 @@
+# SRU Event Hub – Coolify deployment (Build Pack: Docker Compose, this file as the compose location).
+# Coolify's Traefik terminates TLS and routes the domain to the `nginx` service (port 80).
+# No host ports and no bind mounts: configs are baked into small images.
+# Startup order: postgres/redis/storage → storage-init + migrate (one-shot) → api → web → nginx.
+# Setup and the full variable list: docs/DEPLOYMENT.md (section Coolify).
+
+x-db-url: &db-url postgresql://${POSTGRES_USER:-sru}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:-sru_event_hub}?schema=public
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sru}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:-sru_event_hub}
+      TZ: UTC
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4.12-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      retries: 10
+
+  storage:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/seaweedfs.Dockerfile
+    restart: unless-stopped
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-sru-app}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?}
+      S3_BUCKET_PUBLIC: ${S3_BUCKET_PUBLIC:-sru-public}
+    volumes: [storagedata:/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:9333/cluster/status >/dev/null']
+      interval: 5s
+      retries: 20
+
+  storage-init:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/storage-init.Dockerfile
+    restart: 'no'
+    exclude_from_hc: true
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-sru-app}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:?}
+      AWS_DEFAULT_REGION: ${S3_REGION:-ap-southeast-1}
+      BUCKETS: ${S3_BUCKET_PUBLIC:-sru-public} ${S3_BUCKET_PRIVATE:-sru-private}
+    depends_on:
+      storage: { condition: service_healthy }
+
+  # Applies pending migrations on every deploy; with SEED_ON_DEPLOY=true also loads reference
+  # data (idempotent) and the bootstrap admin. The api only starts if this exits successfully.
+  migrate:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+      target: migrate
+    restart: 'no'
+    exclude_from_hc: true
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: *db-url
+      SEED_ON_DEPLOY: ${SEED_ON_DEPLOY:-true}
+      SEED_DEMO: 'false'
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_PORT: 4000
+      DATABASE_URL: *db-url
+      REDIS_URL: redis://redis:6379
+      WEB_PUBLIC_URL: ${APP_URL:?}
+      CORS_ORIGINS: ${APP_URL:?}
+      TRUST_PROXY: 1
+      COOKIE_SECURE: 'true'
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-900}
+      JWT_REFRESH_TTL_DAYS: ${JWT_REFRESH_TTL_DAYS:-14}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${APP_URL:?}/api/v1/auth/google/callback
+      GOOGLE_ALLOWED_DOMAINS: ${GOOGLE_ALLOWED_DOMAINS:-sru.ac.th}
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: ${MAIL_FROM:-SRU Event Hub <no-reply@sru.ac.th>}
+      SELF_REGISTRATION_ENABLED: ${SELF_REGISTRATION_ENABLED:-true}
+      LINE_CHANNEL_ACCESS_TOKEN: ${LINE_CHANNEL_ACCESS_TOKEN:-}
+      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET:-}
+      LINE_BOT_ID: ${LINE_BOT_ID:-}
+      S3_ENDPOINT: http://storage:8333
+      S3_REGION: ${S3_REGION:-ap-southeast-1}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-sru-app}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?}
+      S3_BUCKET_PUBLIC: ${S3_BUCKET_PUBLIC:-sru-public}
+      S3_BUCKET_PRIVATE: ${S3_BUCKET_PRIVATE:-sru-private}
+      S3_FORCE_PATH_STYLE: 'true'
+      SLIP_MAX_BYTES: ${SLIP_MAX_BYTES:-5000000}
+      QUEUE_ENABLED: 'true'
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      storage-init: { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: /api/v1
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:4000/api/v1
+    depends_on:
+      api: { condition: service_healthy }
+
+  # Public entry point: in Coolify set this service's domain, e.g. https://events.sru.ac.th
+  nginx:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/nginx.Dockerfile
+      args:
+        NGINX_CONF: coolify.conf
+    restart: unless-stopped
+    depends_on: [api, web]
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1/api/v1/health/ready >/dev/null']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:
+  storagedata:

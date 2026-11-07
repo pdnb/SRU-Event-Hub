@@ -305,6 +305,36 @@ async function seedDemoEvents(orgIds: Map<string, string>, users: Map<string, st
   });
 }
 
+/**
+ * First super admin for a fresh production database (demo accounts are never created there).
+ * Runs only when BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD are set, and only creates the
+ * account if that e-mail does not exist yet, so a password changed later is never overwritten.
+ */
+async function seedBootstrapAdmin() {
+  const email = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+  if (!email || !password) return;
+  if (password.length < 12) throw new Error('BOOTSTRAP_ADMIN_PASSWORD must be at least 12 characters');
+  if (await prisma.user.findUnique({ where: { email } })) {
+    console.log(`• Bootstrap admin ${email} already exists (unchanged).`);
+    return;
+  }
+  const passwordHash = await argon2.hash(password, { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 });
+  const role = await prisma.role.findUniqueOrThrow({ where: { code: 'SUPER_ADMIN' } });
+  await prisma.user.create({
+    data: {
+      email,
+      displayName: 'ผู้ดูแลระบบสูงสุด',
+      userType: 'STAFF',
+      passwordHash,
+      emailVerifiedAt: new Date(),
+      profile: { create: {} },
+      roles: { create: { roleId: role.id, organizationId: null, scope: 'ALL' } },
+    },
+  });
+  console.log(`✔ Bootstrap admin created: ${email} (remove BOOTSTRAP_ADMIN_PASSWORD from the environment now).`);
+}
+
 async function main() {
   await seedRbac();
   const orgIds = new Map<string, string>();
@@ -314,6 +344,7 @@ async function main() {
   await seedSettings();
   await seedWorkflow(orgIds);
   await seedFinance(prisma);
+  await seedBootstrapAdmin();
   if (DEMO) {
     const pw = await seedDemo(orgIds);
     await seedFinanceDemo(prisma);
